@@ -95,8 +95,6 @@ func (s *Server) newScanWriter(
 		msg:         msg,
 		cursor:      cursor,
 		limit:       limit,
-		wheres:      wheres,
-		whereins:    whereins,
 		whereevals:  whereevals,
 		output:      output,
 		nofields:    nofields,
@@ -115,6 +113,19 @@ func (s *Server) newScanWriter(
 	if sw.col != nil {
 		sw.fmap = sw.col.FieldMap()
 		sw.farr = sw.col.FieldArr()
+		// This fills index value in wheres/whereins
+		// so we don't have to map string field names for each tested object
+		var ok bool
+		for _, where := range wheres {
+			if where.index, ok = sw.fmap[where.field]; ok {
+				sw.wheres = append(sw.wheres, where)
+			}
+		}
+		for _, wherein := range whereins {
+			if wherein.index, ok = sw.fmap[wherein.field]; ok {
+				sw.whereins = append(sw.whereins, wherein)
+			}
+		}
 	}
 	sw.fvals = make([]float64, len(sw.farr))
 	return sw, nil
@@ -210,11 +221,8 @@ func (sw *scanWriter) fieldMatch(fields []float64, o geojson.Object) (fvals []fl
 				continue
 			}
 			var value float64
-			idx, ok := sw.fmap[where.field]
-			if ok {
-				if len(fields) > idx {
-					value = fields[idx]
-				}
+			if len(fields) > where.index {
+				value = fields[where.index]
 			}
 			if !where.match(value) {
 				return
@@ -222,11 +230,8 @@ func (sw *scanWriter) fieldMatch(fields []float64, o geojson.Object) (fvals []fl
 		}
 		for _, wherein := range sw.whereins {
 			var value float64
-			idx, ok := sw.fmap[wherein.field]
-			if ok {
-				if len(fields) > idx {
-					value = fields[idx]
-				}
+			if len(fields) > wherein.index {
+				value = fields[wherein.index]
 			}
 			if !wherein.match(value) {
 				return
@@ -263,13 +268,13 @@ func (sw *scanWriter) fieldMatch(fields []float64, o geojson.Object) (fvals []fl
 				}
 				continue
 			}
-			value := sw.fvals[sw.fmap[where.field]]
+			value := sw.fvals[where.index]
 			if !where.match(value) {
 				return
 			}
 		}
 		for _, wherein := range sw.whereins {
-			value := sw.fvals[sw.fmap[wherein.field]]
+			value := sw.fvals[wherein.index]
 			if !wherein.match(value) {
 				return
 			}
