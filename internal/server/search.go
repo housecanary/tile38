@@ -341,6 +341,7 @@ func (server *Server) cmdNearby(msg *Message) (res resp.Value, err error) {
 	start := time.Now()
 	vs := msg.Args[1:]
 	wr := &bytes.Buffer{}
+	var respOut resp.Value
 	s, err := server.cmdSearchArgs(false, "nearby", vs, nearbyTypes)
 	if s.usingLua() {
 		defer s.Close()
@@ -359,8 +360,8 @@ func (server *Server) cmdNearby(msg *Message) (res resp.Value, err error) {
 	if s.fence {
 		return NOMessage, s
 	}
-	sw, err := server.newScanWriter(
-		wr, msg, s.key, s.output, s.precision, s.glob, false,
+	sc, err := server.newScanner(
+		newScanCollector(msg, wr, &respOut), s.key, s.output, s.precision, s.glob, false,
 		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
 	if err != nil {
 		return NOMessage, err
@@ -368,14 +369,14 @@ func (server *Server) cmdNearby(msg *Message) (res resp.Value, err error) {
 	if msg.OutputType == JSON {
 		wr.WriteString(`{"ok":true`)
 	}
-	sw.writeHead()
-	if sw.col != nil {
+	sc.writeHead()
+	if sc.col != nil {
 		iter := func(id string, o geojson.Object, fields []float64, dist float64) bool {
 			meters := 0.0
 			if s.distance {
 				meters = geo.DistanceFromHaversine(dist)
 			}
-			return sw.writeObject(ScanWriterParams{
+			return sc.writeObject(ScanObjectParams{
 				id:              id,
 				o:               o,
 				fields:          fields,
@@ -385,14 +386,14 @@ func (server *Server) cmdNearby(msg *Message) (res resp.Value, err error) {
 				skipTesting:     true,
 			})
 		}
-		server.nearestNeighbors(&s, sw, msg.Deadline, s.obj.(*geojson.Circle), iter)
+		server.nearestNeighbors(&s, sc, msg.Deadline, s.obj.(*geojson.Circle), iter)
 	}
-	sw.writeFoot()
+	sc.writeFoot()
 	if msg.OutputType == JSON {
 		wr.WriteString(`,"elapsed":"` + time.Now().Sub(start).String() + "\"}")
 		return resp.BytesValue(wr.Bytes()), nil
 	}
-	return sw.respOut, nil
+	return respOut, nil
 }
 
 type iterItem struct {
@@ -403,17 +404,17 @@ type iterItem struct {
 }
 
 func (server *Server) nearestNeighbors(
-	s *liveFenceSwitches, sw *scanWriter, dl *deadline.Deadline,
+	s *liveFenceSwitches, sc *scanner, dl *deadline.Deadline,
 	target *geojson.Circle,
 	iter func(id string, o geojson.Object, fields []float64, dist float64,
 	) bool) {
 	maxDist := target.Haversine()
 	var items []iterItem
-	sw.col.Nearby(target, sw, dl, func(id string, o geojson.Object, fields []float64) bool {
+	sc.col.Nearby(target, sc, dl, func(id string, o geojson.Object, fields []float64) bool {
 		if server.hasExpired(s.key, id) {
 			return true
 		}
-		ok, keepGoing, _ := sw.testObject(id, o, fields, false)
+		ok, keepGoing, _ := sc.testObject(id, o, fields, false)
 		if !ok {
 			return true
 		}
@@ -425,7 +426,7 @@ func (server *Server) nearestNeighbors(
 		if !keepGoing {
 			return false
 		}
-		return uint64(len(items)) < sw.limit
+		return uint64(len(items)) < sc.limit
 	})
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].dist < items[j].dist
@@ -450,6 +451,7 @@ func (server *Server) cmdWithinOrIntersects(cmd string, msg *Message) (res resp.
 	vs := msg.Args[1:]
 
 	wr := &bytes.Buffer{}
+	var respOut resp.Value
 	s, err := server.cmdSearchArgs(false, cmd, vs, withinOrIntersectsTypes)
 	if s.usingLua() {
 		defer s.Close()
@@ -468,8 +470,8 @@ func (server *Server) cmdWithinOrIntersects(cmd string, msg *Message) (res resp.
 	if s.fence {
 		return NOMessage, s
 	}
-	sw, err := server.newScanWriter(
-		wr, msg, s.key, s.output, s.precision, s.glob, false,
+	sc, err := server.newScanner(
+		newScanCollector(msg, wr, &respOut), s.key, s.output, s.precision, s.glob, false,
 		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
 	if err != nil {
 		return NOMessage, err
@@ -477,16 +479,16 @@ func (server *Server) cmdWithinOrIntersects(cmd string, msg *Message) (res resp.
 	if msg.OutputType == JSON {
 		wr.WriteString(`{"ok":true`)
 	}
-	sw.writeHead()
-	if sw.col != nil {
+	sc.writeHead()
+	if sc.col != nil {
 		if cmd == "within" {
-			sw.col.Within(s.obj, s.sparse, sw, msg.Deadline, func(
+			sc.col.Within(s.obj, s.sparse, sc, msg.Deadline, func(
 				id string, o geojson.Object, fields []float64,
 			) bool {
 				if server.hasExpired(s.key, id) {
 					return true
 				}
-				return sw.writeObject(ScanWriterParams{
+				return sc.writeObject(ScanObjectParams{
 					id:     id,
 					o:      o,
 					fields: fields,
@@ -494,7 +496,7 @@ func (server *Server) cmdWithinOrIntersects(cmd string, msg *Message) (res resp.
 				})
 			})
 		} else if cmd == "intersects" {
-			sw.col.Intersects(s.obj, s.sparse, sw, msg.Deadline, func(
+			sc.col.Intersects(s.obj, s.sparse, sc, msg.Deadline, func(
 				id string,
 				o geojson.Object,
 				fields []float64,
@@ -502,7 +504,7 @@ func (server *Server) cmdWithinOrIntersects(cmd string, msg *Message) (res resp.
 				if server.hasExpired(s.key, id) {
 					return true
 				}
-				params := ScanWriterParams{
+				params := ScanObjectParams{
 					id:     id,
 					o:      o,
 					fields: fields,
@@ -511,16 +513,16 @@ func (server *Server) cmdWithinOrIntersects(cmd string, msg *Message) (res resp.
 				if s.clip {
 					params.clip = s.obj
 				}
-				return sw.writeObject(params)
+				return sc.writeObject(params)
 			})
 		}
 	}
-	sw.writeFoot()
+	sc.writeFoot()
 	if msg.OutputType == JSON {
 		wr.WriteString(`,"elapsed":"` + time.Now().Sub(start).String() + "\"}")
 		return resp.BytesValue(wr.Bytes()), nil
 	}
-	return sw.respOut, nil
+	return respOut, nil
 }
 
 func (server *Server) cmdSeachValuesArgs(vs []string) (
@@ -544,6 +546,7 @@ func (server *Server) cmdSearch(msg *Message) (res resp.Value, err error) {
 	vs := msg.Args[1:]
 
 	wr := &bytes.Buffer{}
+	var respOut resp.Value
 	s, err := server.cmdSeachValuesArgs(vs)
 	if s.usingLua() {
 		defer s.Close()
@@ -558,8 +561,8 @@ func (server *Server) cmdSearch(msg *Message) (res resp.Value, err error) {
 	if err != nil {
 		return NOMessage, err
 	}
-	sw, err := server.newScanWriter(
-		wr, msg, s.key, s.output, s.precision, s.glob, true,
+	sc, err := server.newScanner(
+		newScanCollector(msg, wr, &respOut), s.key, s.output, s.precision, s.glob, true,
 		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
 	if err != nil {
 		return NOMessage, err
@@ -567,20 +570,20 @@ func (server *Server) cmdSearch(msg *Message) (res resp.Value, err error) {
 	if msg.OutputType == JSON {
 		wr.WriteString(`{"ok":true`)
 	}
-	sw.writeHead()
-	if sw.col != nil {
-		if sw.output == outputCount && len(sw.wheres) == 0 && sw.globEverything == true {
-			count := sw.col.Count() - int(s.cursor)
+	sc.writeHead()
+	if sc.col != nil {
+		if sc.output == outputCount && len(sc.wheres) == 0 && sc.globEverything == true {
+			count := sc.col.Count() - int(s.cursor)
 			if count < 0 {
 				count = 0
 			}
-			sw.count = uint64(count)
+			sc.count = uint64(count)
 		} else {
-			g := glob.Parse(sw.globPattern, s.desc)
+			g := glob.Parse(sc.globPattern, s.desc)
 			if g.Limits[0] == "" && g.Limits[1] == "" {
-				sw.col.SearchValues(s.desc, sw, msg.Deadline,
+				sc.col.SearchValues(s.desc, sc, msg.Deadline,
 					func(id string, o geojson.Object, fields []float64) bool {
-						return sw.writeObject(ScanWriterParams{
+						return sc.writeObject(ScanObjectParams{
 							id:     id,
 							o:      o,
 							fields: fields,
@@ -591,11 +594,11 @@ func (server *Server) cmdSearch(msg *Message) (res resp.Value, err error) {
 			} else {
 				// must disable globSingle for string value type matching because
 				// globSingle is only for ID matches, not values.
-				sw.globSingle = false
-				sw.col.SearchValuesRange(g.Limits[0], g.Limits[1], s.desc, sw,
+				sc.globSingle = false
+				sc.col.SearchValuesRange(g.Limits[0], g.Limits[1], s.desc, sc,
 					msg.Deadline,
 					func(id string, o geojson.Object, fields []float64) bool {
-						return sw.writeObject(ScanWriterParams{
+						return sc.writeObject(ScanObjectParams{
 							id:     id,
 							o:      o,
 							fields: fields,
@@ -606,10 +609,10 @@ func (server *Server) cmdSearch(msg *Message) (res resp.Value, err error) {
 			}
 		}
 	}
-	sw.writeFoot()
+	sc.writeFoot()
 	if msg.OutputType == JSON {
 		wr.WriteString(`,"elapsed":"` + time.Now().Sub(start).String() + "\"}")
 		return resp.BytesValue(wr.Bytes()), nil
 	}
-	return sw.respOut, nil
+	return respOut, nil
 }
