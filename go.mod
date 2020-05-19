@@ -29,11 +29,11 @@ require (
 	github.com/tidwall/cities v0.0.0-20190730194520-dbe1ae0b862c // indirect
 	github.com/tidwall/geoindex v1.4.0
 	github.com/tidwall/geojson v1.1.13
-	github.com/tidwall/gjson v1.3.2
+	github.com/tidwall/gjson v1.6.0
 	github.com/tidwall/grect v0.0.0-20161006141115-ba9a043346eb // indirect
 	github.com/tidwall/lotsa v0.0.0-20180225195211-a03631ac7f1c // indirect
 	github.com/tidwall/match v1.0.1
-	github.com/tidwall/pretty v1.0.0
+	github.com/tidwall/pretty v1.0.1
 	github.com/tidwall/rbang v1.2.1
 	github.com/tidwall/redbench v0.0.0-20181110173744-17c5b5b864a4
 	github.com/tidwall/redcon v0.0.0-20171003141744-3df12143a4fe
@@ -47,7 +47,6 @@ require (
 	golang.org/x/crypto v0.0.0-20170930174604-9419663f5a44
 	golang.org/x/net v0.0.0-20171004034648-a04bdaca5b32
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
-	golang.org/x/sys v0.0.0-20170927054621-314a259e304f // indirect
 	golang.org/x/text v0.1.1-0.20171005092100-d82c1812e304 // indirect
 	google.golang.org/genproto v0.0.0-20171002232614-f676e0f3ac63 // indirect
 	google.golang.org/grpc v1.6.0
@@ -55,3 +54,11 @@ require (
 )
 
 replace github.com/tidwall/geoindex v1.4.0 => github.com/housecanary/geoindex v1.4.0-allocfix
+
+replace github.com/yuin/gopher-lua v0.0.0-20170915035107-eb1c7299435c => github.com/housecanary/gopher-lua v0.0.0-20200519001237-393917e4390d
+
+replace github.com/tidwall/geojson v1.1.13 => github.com/housecanary/geojson v1.1.14-0.20200519001531-2c20c7fed562
+
+replace github.com/tidwall/sjson v1.0.2 => github.com/housecanary/sjson v1.1.2-0.20200519001658-1d0af472af6d
+
+replace github.com/tidwall/gjson v1.6.0 => github.com/housecanary/gjson v1.6.0-fix-unsafe

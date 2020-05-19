@@ -16,11 +16,11 @@ func json_JSET_basic_test(mc *mockServer) error {
 		{"JGET", "mykey", "myid1"}, {`{"hello":"planet"}`},
 		{"JSET", "mykey", "myid1", "user.name.last", "tom"}, {"OK"},
 		{"JSET", "mykey", "myid1", "user.name.first", "andrew"}, {"OK"},
-		{"JGET", "mykey", "myid1"}, {`{"user":{"name":{"first":"andrew","last":"tom"}},"hello":"planet"}`},
+		{"JGET", "mykey", "myid1"}, {`{"hello":"planet","user":{"name":{"last":"tom","first":"andrew"}}}`},
 		{"JDEL", "mykey", "myid1", "user.name.last"}, {1},
-		{"JGET", "mykey", "myid1"}, {`{"user":{"name":{"first":"andrew"}},"hello":"planet"}`},
+		{"JGET", "mykey", "myid1"}, {`{"hello":"planet","user":{"name":{"first":"andrew"}}}`},
 		{"JDEL", "mykey", "myid1", "user.name.last"}, {0},
-		{"JGET", "mykey", "myid1"}, {`{"user":{"name":{"first":"andrew"}},"hello":"planet"}`},
+		{"JGET", "mykey", "myid1"}, {`{"hello":"planet","user":{"name":{"first":"andrew"}}}`},
 		{"JDEL", "mykey2", "myid1", "user.name.last"}, {0},
 	})
 }

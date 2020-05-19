@@ -256,7 +256,10 @@ func strCmp(s1, s2 string) int {
 }
 
 func unsafeFastStringToReadOnlyBytes(s string) []byte {
-	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
-	bh := reflect.SliceHeader{sh.Data, sh.Len, sh.Len}
-	return *(*[]byte)(unsafe.Pointer(&bh))
+	var b []byte
+	bHdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	bHdr.Data = uintptr(unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&s)).Data))
+	bHdr.Len = len(s)
+	bHdr.Cap = len(s)
+	return b
 }
