@@ -70,13 +70,13 @@ type commandDetails struct {
 // Server is a tile38 controller
 type Server struct {
 	// static values
-	host    string
-	port    int
-	http    bool
-	dir     string
-	started time.Time
-	config  *Config
-	epc     *endpoint.Manager
+	host         string
+	port         int
+	http         bool
+	dir          string
+	started      time.Time
+	config       *Config
+	epc          *endpoint.Manager
 	snapshotMeta *SnapshotMeta
 
 	// env opts
@@ -96,13 +96,13 @@ type Server struct {
 	connsmu sync.RWMutex
 	conns   map[int]*Client
 
-	snapmu   sync.Mutex    // snapshot locking
+	snapmu sync.Mutex // snapshot locking
 
 	mu       sync.RWMutex
 	aof      *os.File        // active aof file
 	aofdirty int32           // mark the aofbuf as having data
 	aofbuf   []byte          // prewrite buffer
-	aofsz    int64             // active size of the aof file
+	aofsz    int64           // active size of the aof file
 	qdb      *buntdb.DB      // hook queue log
 	qidx     uint64          // hook queue log last idx
 	cols     tinybtree.BTree // data collections
@@ -424,6 +424,8 @@ func (server *Server) netServe() error {
 				pr.rd = rdbuf
 				pr.wr = client
 
+				client.possiblyWrote = false
+
 				msgs, err := pr.ReadMessages()
 				for _, msg := range msgs {
 					// Just closing connection if we have deprecated HTTP or WS connection,
@@ -511,7 +513,7 @@ func (server *Server) netServe() error {
 
 				// write to client
 				if len(client.out) > 0 {
-					if atomic.LoadInt32(&server.aofdirty) != 0 {
+					if client.possiblyWrote && atomic.LoadInt32(&server.aofdirty) != 0 {
 						func() {
 							// prewrite
 							defer server.WriterLock()()
@@ -855,6 +857,8 @@ func (server *Server) handleInputCommand(client *Client, msg *Message) error {
 			return writeErr("read only")
 		}
 	case "eval", "evalsha":
+		write = true // We are going assume here that any eval is a write operation on this layer
+
 		// write operations (potentially) but no AOF for the script command itself
 		defer server.WriterLock()()
 		if server.config.followHost() != "" {
@@ -899,7 +903,7 @@ func (server *Server) handleInputCommand(client *Client, msg *Message) error {
 			}
 		case "load":
 			defer server.WriterLock()()
-		default:  // latest meta is read-only
+		default: // latest meta is read-only
 			defer server.ReaderLock()()
 		}
 	case "client":
@@ -909,6 +913,11 @@ func (server *Server) handleInputCommand(client *Client, msg *Message) error {
 	case "subscribe", "psubscribe", "publish":
 		// No locking for pubsub
 	}
+
+	if write {
+		client.possiblyWrote = true
+	}
+
 	res, d, err := func() (res resp.Value, d commandDetails, err error) {
 		if msg.Deadline != nil {
 			if write {

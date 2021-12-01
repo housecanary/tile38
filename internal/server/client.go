@@ -24,6 +24,8 @@ type Client struct {
 	pr         PipelineReader // command reader
 	out        []byte         // output write buffer
 
+	possiblyWrote bool // is the client connection doing any potential writes
+
 	goLiveErr error    // error type used for going line
 	goLiveMsg *Message // last message for go live
 
