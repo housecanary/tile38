@@ -518,8 +518,10 @@ func (server *Server) netServe() error {
 							// prewrite
 							defer server.WriterLock()()
 							server.flushAOF(false)
+
+							// move the ofdirty clear inside the lock
+							atomic.StoreInt32(&server.aofdirty, 0)
 						}()
-						atomic.StoreInt32(&server.aofdirty, 0)
 					}
 					conn.Write(client.out)
 					client.out = nil
@@ -857,7 +859,7 @@ func (server *Server) handleInputCommand(client *Client, msg *Message) error {
 			return writeErr("read only")
 		}
 	case "eval", "evalsha":
-		write = true // We are going assume here that any eval is a write operation on this layer
+		client.possiblyWrote = true // We are going assume here that any eval is a write operation on this layer
 
 		// write operations (potentially) but no AOF for the script command itself
 		defer server.WriterLock()()
