@@ -1,4 +1,4 @@
-package collections
+package collection
 
 import (
 	"github.com/tidwall/geoindex/child"
@@ -16,15 +16,22 @@ type rect struct {
 
 type node struct {
 	count int
-	rects [maxEntries + 1]rect
+	rects []rect
 }
 
 // RTree ...
 type RTree struct {
-	height   int
-	root     rect
-	count    int
-	reinsert []rect
+	height        int
+	root          rect
+	count         int
+	reinsert      []rect
+	skipRebalance bool
+}
+
+func newNode() *node {
+	return &node{
+		rects: make([]rect, maxEntries+1),
+	}
 }
 
 func (r *rect) expand(b *rect) {
@@ -122,20 +129,27 @@ func (tr *RTree) Insert(min, max [2]float64, value interface{}) {
 
 func (tr *RTree) insert(item *rect) {
 	if tr.root.data == nil {
-		fit(item.min, item.max, new(node), &tr.root)
+		fit(item.min, item.max, newNode(), &tr.root)
 	}
-	grown := tr.root.insert(item, tr.height)
+	grown := tr.root.insert(item, tr.height, tr.skipRebalance)
 	if grown {
 		tr.root.expand(item)
 	}
-	if tr.root.data.(*node).count == maxEntries+1 {
-		newRoot := new(node)
-		tr.root.splitLargestAxisEdgeSnap(&newRoot.rects[1])
-		newRoot.rects[0] = tr.root
-		newRoot.count = 2
-		tr.root.data = newRoot
-		tr.root.recalc()
-		tr.height++
+	rootNode := tr.root.data.(*node)
+
+	if rootNode.full() {
+		if tr.skipRebalance {
+			tr.root.data = rootNode.outgrow()
+		} else {
+			newRoot := newNode()
+
+			tr.root.splitLargestAxisEdgeSnap(&newRoot.rects[1])
+			newRoot.rects[0] = tr.root
+			newRoot.count = 2
+			tr.root.data = newRoot
+			tr.root.recalc()
+			tr.height++
+		}
 	}
 	tr.count++
 }
@@ -155,6 +169,23 @@ func (r *rect) chooseLeastEnlargement(b *rect) int {
 		}
 	}
 	return j
+}
+
+func (r *node) outgrow() *node {
+	result := &node{
+		rects: make([]rect, len(r.rects)*2),
+		count: r.count,
+	}
+
+	for i := 0; i < r.count; i++ {
+		result.rects[i] = r.rects[i]
+	}
+
+	return result
+}
+
+func (r *node) full() bool {
+	return r.count%(maxEntries+1) == 0
 }
 
 func (r *rect) recalc() {
@@ -188,7 +219,7 @@ func (r *rect) splitLargestAxisEdgeSnap(right *rect) {
 	axis, _ := r.largestAxis()
 	left := r
 	leftNode := left.data.(*node)
-	rightNode := new(node)
+	rightNode := newNode()
 	right.data = rightNode
 
 	var equals []rect
@@ -225,7 +256,7 @@ func (r *rect) splitLargestAxisEdgeSnap(right *rect) {
 	right.recalc()
 }
 
-func (r *rect) insert(item *rect, height int) (grown bool) {
+func (r *rect) insert(item *rect, height int, skipRebalance bool) (grown bool) {
 	n := r.data.(*node)
 	if height == 0 {
 		n.rects[n.count] = *item
@@ -236,14 +267,18 @@ func (r *rect) insert(item *rect, height int) (grown bool) {
 	// choose subtree
 	index := r.chooseLeastEnlargement(item)
 	child := &n.rects[index]
-	grown = child.insert(item, height-1)
+	grown = child.insert(item, height-1, skipRebalance)
 	if grown {
 		child.expand(item)
 		grown = !r.contains(item)
 	}
-	if child.data.(*node).count == maxEntries+1 {
-		child.splitLargestAxisEdgeSnap(&n.rects[n.count])
-		n.count++
+	if child.data.(*node).full() {
+		if skipRebalance {
+			child.data = child.data.(*node).outgrow()
+		} else {
+			child.splitLargestAxisEdgeSnap(&n.rects[n.count])
+			n.count++
+		}
 	}
 	return grown
 }
