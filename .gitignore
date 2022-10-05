@@ -9,3 +9,5 @@ packages/
 # Ignore IDE folders
 .idea/
 .vscode/
+
+vendor
