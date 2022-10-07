@@ -20,6 +20,7 @@ import (
 	"github.com/tidwall/tile38/internal/collection"
 	"github.com/tidwall/tile38/internal/glob"
 	"github.com/tidwall/tile38/internal/log"
+	"github.com/tidwall/tile38/internal/similarity"
 	"github.com/tidwall/tile38/internal/txn"
 	lua "github.com/yuin/gopher-lua"
 	luajson "layeh.com/gopher-json"
@@ -161,6 +162,45 @@ func (pl *lStatePool) new() *lua.LState {
 		ls.Push(lua.LNumber(dt))
 		return 1
 	}
+
+	adjustedScore := func(ls *lua.LState) int {
+		tableToArray := func(table *lua.LTable) []float64 {
+			res := make([]float64, table.Len())
+			table.ForEach(func(l1, l2 lua.LValue) {
+				offset := lua.LVAsNumber(l1)
+				value := lua.LVAsNumber(l2)
+
+				res[int(offset)-1] = float64(value)
+			})
+
+			return res
+		}
+
+		lAlgorithm := ls.ToTable(1)
+		lScores := ls.ToTable(2)
+		lDistances := ls.ToTable(3)
+		lAges := ls.ToTable(4)
+
+		scores := tableToArray(lScores)
+		distances := tableToArray(lDistances)
+		ages := tableToArray(lAges)
+
+		algorithm := lua.LVAsString(lAlgorithm.RawGetString("algorithm"))
+		values, err := similarity.AdjustedSimilarity(algorithm, lAlgorithm, scores, distances, ages)
+		if err != nil {
+			ls.RaiseError("%v", err)
+			return 0
+		}
+
+		result := lua.LTable{}
+		for i, x := range values {
+			result.Insert(i, lua.LNumber(x))
+		}
+
+		ls.Push(&result)
+		return 1
+	}
+
 	baseIterate := func(ls *lua.LState, pcall bool) (string, error) {
 		evalCmd := ls.GetGlobal("EVAL_CMD").String()
 		ts := ls.GetGlobal("TXN_STATUS").(*lua.LUserData).Value.(*txn.Status)
@@ -252,16 +292,17 @@ func (pl *lStatePool) new() *lua.LState {
 		return 1
 	}
 	var exports = map[string]lua.LGFunction{
-		"call":          call,
-		"pcall":         pcall,
-		"error_reply":   errorReply,
-		"status_reply":  statusReply,
-		"sha1hex":       sha1hex,
-		"distance_to":   distanceTo,
-		"iterate":       iterate,
-		"piterate":      piterate,
-		"field_indexes": fieldIndexes,
-		"get":           getObject,
+		"call":           call,
+		"pcall":          pcall,
+		"error_reply":    errorReply,
+		"status_reply":   statusReply,
+		"sha1hex":        sha1hex,
+		"distance_to":    distanceTo,
+		"iterate":        iterate,
+		"piterate":       piterate,
+		"field_indexes":  fieldIndexes,
+		"get":            getObject,
+		"adjusted_score": adjustedScore,
 	}
 	L.SetGlobal("tile38", L.SetFuncs(L.NewTable(), exports))
 
