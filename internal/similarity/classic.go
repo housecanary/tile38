@@ -1,12 +1,10 @@
 package similarity
 
 import (
-	"math"
-
 	lua "github.com/yuin/gopher-lua"
 )
 
-func adjustedSimilarityClassic(
+func adjustedSimilarityScoresClassic(
 	algorithmParams *lua.LTable,
 	scores, distances, ages []float64,
 ) ([]float64, error) {
@@ -58,45 +56,4 @@ func adjustedSimilarityScoreClassic(
 		adj = 100
 	}
 	return adj
-}
-
-func cdf(x float64, minx float64, mu float64, sigma float64) float64 {
-	if sigma <= 0.0 {
-		return 0
-	}
-
-	return 0.5*math.Erfc(-(x-mu)/(sigma*math.Sqrt2)) - 0.5*math.Erfc(-(minx-mu)/(sigma*math.Sqrt2))
-}
-
-func meanStdMinMax(data []float64) (mean, std, min, max float64) {
-	if len(data) == 0 {
-		return math.NaN(), math.NaN(), math.NaN(), math.NaN()
-	}
-
-	min = data[0]
-	max = data[0]
-
-	var n = len(data)
-	var sum float64
-	for i := 0; i < n; i++ {
-		sum += data[i]
-
-		if data[i] < min {
-			min = data[i]
-		}
-
-		if data[i] > max {
-			max = data[i]
-		}
-	}
-
-	mean = sum / float64(n)
-	for i := 0; i < n; i++ {
-		diff := data[i] - mean
-		std += diff * diff
-	}
-
-	std = math.Sqrt(std / float64(n))
-
-	return mean, std, min, max
 }
