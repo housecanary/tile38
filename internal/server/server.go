@@ -139,23 +139,9 @@ type Server struct {
 // Serve starts a new tile38 server
 func Serve(host string, port int, dir string, http bool, maxWriteDelay, maxReadDelay time.Duration) error {
 	// Initialize the server
-	server := &Server{
-		host:      host,
-		port:      port,
-		dir:       dir,
-		scheduler: txn.NewScheduler(maxWriteDelay, maxReadDelay),
-		follows:   make(map[*bytes.Buffer]bool),
-		fcond:     sync.NewCond(&sync.Mutex{}),
-		lives:     make(map[*liveBuffer]bool),
-		lcond:     sync.NewCond(&sync.Mutex{}),
-		hooks:     make(map[string]*Hook),
-		hooksOut:  make(map[string]*Hook),
-		aofconnM:  make(map[net.Conn]bool),
-		expires:   rhh.New(0),
-		started:   time.Now(),
-		conns:     make(map[int]*Client),
-		http:      http,
-		pubsub:    newPubsub(),
+	server, err := NewServer(host, port, dir, http, maxWriteDelay, maxReadDelay)
+	if err != nil {
+		return err
 	}
 
 	return server.Serve()

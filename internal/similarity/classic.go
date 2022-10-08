@@ -4,6 +4,11 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+const (
+	DIST_MAX_PENALTY = 5. * .75
+	AGE_MAX_PENALTY  = 20.
+)
+
 func adjustedSimilarityScoresClassic(
 	algorithmParams *lua.LTable,
 	scores, distances, ages []float64,
@@ -14,11 +19,11 @@ func adjustedSimilarityScoresClassic(
 	var err error
 	var distMaxPenalty, ageMaxPenalty float64
 
-	if distMaxPenalty, err = getParameterNumber(algorithmParams, "distMaxPenalty", 10.); err != nil {
+	if distMaxPenalty, err = getParameterNumber(algorithmParams, "distMaxPenalty", DIST_MAX_PENALTY); err != nil {
 		return nil, err
 	}
 
-	if ageMaxPenalty, err = getParameterNumber(algorithmParams, "ageMaxPenalty", 10.); err != nil {
+	if ageMaxPenalty, err = getParameterNumber(algorithmParams, "ageMaxPenalty", AGE_MAX_PENALTY); err != nil {
 		return nil, err
 	}
 

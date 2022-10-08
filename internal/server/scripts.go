@@ -165,7 +165,17 @@ func (pl *lStatePool) new() *lua.LState {
 
 	adjustedSimilarityScores := func(ls *lua.LState) int {
 		tableToArray := func(table *lua.LTable) []float64 {
-			res := make([]float64, table.Len())
+			maxOffset := 0
+
+			table.ForEach(func(l1, l2 lua.LValue) {
+				offset := lua.LVAsNumber(l1)
+				if int(offset) > maxOffset {
+					maxOffset = int(offset)
+				}
+			})
+
+			res := make([]float64, maxOffset)
+
 			table.ForEach(func(l1, l2 lua.LValue) {
 				offset := lua.LVAsNumber(l1)
 				value := lua.LVAsNumber(l2)
@@ -194,7 +204,7 @@ func (pl *lStatePool) new() *lua.LState {
 
 		result := lua.LTable{}
 		for i, x := range values {
-			result.Insert(i, lua.LNumber(x))
+			result.RawSetH(lua.LNumber(i+1), lua.LNumber(x))
 		}
 
 		ls.Push(&result)
