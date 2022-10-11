@@ -20,7 +20,6 @@ import (
 	"github.com/tidwall/tile38/internal/collection"
 	"github.com/tidwall/tile38/internal/glob"
 	"github.com/tidwall/tile38/internal/log"
-	"github.com/tidwall/tile38/internal/similarity"
 	"github.com/tidwall/tile38/internal/txn"
 	lua "github.com/yuin/gopher-lua"
 	luajson "layeh.com/gopher-json"
@@ -163,51 +162,71 @@ func (pl *lStatePool) new() *lua.LState {
 		return 1
 	}
 
-	adjustedSimilarityScores := func(ls *lua.LState) int {
-		tableToArray := func(table *lua.LTable) []float64 {
-			maxOffset := 0
+	meanStdMinMax := func(ls *lua.LState) int {
+		var data []float64
 
-			table.ForEach(func(l1, l2 lua.LValue) {
-				offset := lua.LVAsNumber(l1)
-				if int(offset) > maxOffset {
-					maxOffset = int(offset)
-				}
-			})
+		table := ls.ToTable(1)
+		table.ForEach(func(l1, l2 lua.LValue) {
+			value := lua.LVAsNumber(l2)
 
-			res := make([]float64, maxOffset)
+			data = append(data, float64(value))
+		})
 
-			table.ForEach(func(l1, l2 lua.LValue) {
-				offset := lua.LVAsNumber(l1)
-				value := lua.LVAsNumber(l2)
-
-				res[int(offset)-1] = float64(value)
-			})
-
-			return res
-		}
-
-		lAlgorithm := ls.ToTable(1)
-		lScores := ls.ToTable(2)
-		lDistances := ls.ToTable(3)
-		lAges := ls.ToTable(4)
-
-		scores := tableToArray(lScores)
-		distances := tableToArray(lDistances)
-		ages := tableToArray(lAges)
-
-		algorithm := lua.LVAsString(lAlgorithm.RawGetString("algorithm"))
-		values, err := similarity.AdjustedSimilarityScores(algorithm, lAlgorithm, scores, distances, ages)
-		if err != nil {
-			ls.RaiseError("%v", err)
+		if len(data) == 0 {
+			ls.RaiseError("no data provided")
 			return 0
 		}
 
-		result := lua.LTable{}
-		for i, x := range values {
-			result.RawSetH(lua.LNumber(i+1), lua.LNumber(x))
+		min, max := data[0], data[0]
+
+		var n = len(data)
+		var sum float64
+		for i := 0; i < n; i++ {
+			sum += data[i]
+
+			if data[i] < min {
+				min = data[i]
+			}
+
+			if data[i] > max {
+				max = data[i]
+			}
 		}
 
-		ls.Push(&result)
+		mean := sum / float64(n)
+		var std float64
+
+		for i := 0; i < n; i++ {
+			diff := data[i] - mean
+			std += diff * diff
+		}
+
+		std = math.Sqrt(std / float64(n))
+
+		ls.Push(lua.LNumber(mean))
+		ls.Push(lua.LNumber(std))
+		ls.Push(lua.LNumber(min))
+		ls.Push(lua.LNumber(max))
+
+		return 4
+	}
+
+	cdf := func(ls *lua.LState) int {
+		x := float64(ls.ToNumber(1))
+		minx := float64(ls.ToNumber(2))
+		mu := float64(ls.ToNumber(3))
+		sigma := float64(ls.ToNumber(4))
+
+		if sigma <= 0.0 {
+			ls.Push(lua.LNumber(
+				0,
+			))
+		} else {
+			ls.Push(lua.LNumber(
+				0.5*math.Erfc(-(x-mu)/(sigma*math.Sqrt2)) - 0.5*math.Erfc(-(minx-mu)/(sigma*math.Sqrt2)),
+			))
+		}
+
 		return 1
 	}
 
@@ -302,17 +321,18 @@ func (pl *lStatePool) new() *lua.LState {
 		return 1
 	}
 	var exports = map[string]lua.LGFunction{
-		"call":                       call,
-		"pcall":                      pcall,
-		"error_reply":                errorReply,
-		"status_reply":               statusReply,
-		"sha1hex":                    sha1hex,
-		"distance_to":                distanceTo,
-		"iterate":                    iterate,
-		"piterate":                   piterate,
-		"field_indexes":              fieldIndexes,
-		"get":                        getObject,
-		"adjusted_similarity_scores": adjustedSimilarityScores,
+		"call":             call,
+		"pcall":            pcall,
+		"error_reply":      errorReply,
+		"status_reply":     statusReply,
+		"sha1hex":          sha1hex,
+		"distance_to":      distanceTo,
+		"iterate":          iterate,
+		"piterate":         piterate,
+		"field_indexes":    fieldIndexes,
+		"get":              getObject,
+		"mean_std_min_max": meanStdMinMax,
+		"cdf":              cdf,
 	}
 	L.SetGlobal("tile38", L.SetFuncs(L.NewTable(), exports))
 

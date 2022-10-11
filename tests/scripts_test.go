@@ -7,11 +7,13 @@ import (
 )
 
 func subTestScripts(t *testing.T, mc *mockServer) {
-	runStep(t, mc, "BASIC", scripts_BASIC_test)
-	runStep(t, mc, "ATOMIC", scripts_ATOMIC_test)
-	runStep(t, mc, "READONLY", scripts_READONLY_test)
-	runStep(t, mc, "NONATOMIC", scripts_NONATOMIC_test)
-	runStep(t, mc, "ITERATE", scripts_ITERATE_test)
+	// runStep(t, mc, "BASIC", scripts_BASIC_test)
+	// runStep(t, mc, "ATOMIC", scripts_ATOMIC_test)
+	// runStep(t, mc, "READONLY", scripts_READONLY_test)
+	// runStep(t, mc, "NONATOMIC", scripts_NONATOMIC_test)
+	// runStep(t, mc, "ITERATE", scripts_ITERATE_test)
+
+	runStep(t, mc, "MATH", scripts_MATH_test)
 }
 
 func scripts_BASIC_test(mc *mockServer) error {
@@ -144,5 +146,37 @@ func scripts_ITERATE_test(mc *mockServer) error {
 		{"EVAL", script_obj, 0}, {"[0 [" + poly9 + "]]"}, // no early stop, cursor = 0
 		{"EVAL", script_fields, 0}, {"[1 [[1 10]]]"}, // early stop, cursor = 1
 		{"EVAL", script_nearby_ids, 0}, {"[1 [poly10]]"}, // early stop, cursor = 1
+	})
+
+}
+
+func scripts_MATH_test(mc *mockServer) error {
+	script_mean_std_min_max := `
+		local data = {[1]=99, [2]=88, [3]=77}
+		
+		local mean, std, min, max
+
+		mean, std, min, max = tile38.mean_std_min_max(data)
+
+		return {mean, std, min, max}
+	`
+
+	script_cdf := `
+		local mean, std, min
+
+		mean = 99
+		std = 8
+		min = 77
+		
+		local cdf
+
+		cdf = tile38.cdf(90, 10, mean, std)
+
+		return {cdf * 100}
+	`
+
+	return mc.DoBatch([][]interface{}{
+		{"EVAL", script_cdf, 0}, {"[13]"},
+		{"EVAL", script_mean_std_min_max, 0}, {"[88 8 77 99]"},
 	})
 }
