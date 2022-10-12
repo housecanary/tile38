@@ -20,19 +20,11 @@ type summary struct {
 
 func (a *statsArray) Copy() *statsArray {
 	result := statsArray{
-		xs: make([]float64, len(a.xs)),
+		xs:      make([]float64, len(a.xs)),
+		summary: a.summary,
 	}
 
 	copy(result.xs, a.xs)
-
-	if a.summary != nil {
-		result.summary = &summary{
-			a.summary.mean,
-			a.summary.standardDeviation,
-			a.summary.min,
-			a.summary.max,
-		}
-	}
 
 	return &result
 }
@@ -114,6 +106,7 @@ func (a *statsArray) minMaxIndexes(n int, min bool) []int {
 	if n > len(a.xs) {
 		n = len(a.xs)
 	}
+
 	indexAry := make([]int, n)
 	for i := 0; i < n; i++ {
 		indexAry[i] = i
@@ -127,17 +120,21 @@ func (a *statsArray) minMaxIndexes(n int, min bool) []int {
 	if min {
 		s = sort.Reverse(s)
 	}
-	heap.Init(fixedSizeHeap{s})
+
+	var hp heap.Interface = fixedSizeHeap{s}
+	heap.Init(hp)
 
 	for i := n; i < len(a.xs); i++ {
 		x := a.xs[i]
 		bubble := a.xs[indexAry[0]]
 		if (min && x < bubble) || (!min && x > bubble) {
 			indexAry[0] = i
-			heap.Fix(fixedSizeHeap{s}, 0)
+			heap.Fix(hp, 0)
 		}
 	}
+
 	sort.Sort(sort.Reverse(s))
+
 	return indexAry
 }
 
