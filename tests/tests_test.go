@@ -49,7 +49,6 @@ func TestAll(t *testing.T) {
 	runSubTest(t, "testcmd", mc, subTestTestCmd)
 	runSubTest(t, "fence", mc, subTestFence)
 	runSubTest(t, "scripts", mc, subTestScripts)
-	runSubTest(t, "similarity", mc, subTestSimilarity)
 	runSubTest(t, "info", mc, subTestInfo)
 	runSubTest(t, "client", mc, subTestClient)
 	runSubTest(t, "timeouts", mc, subTestTimeout)
