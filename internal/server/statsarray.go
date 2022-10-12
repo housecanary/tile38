@@ -18,6 +18,25 @@ type summary struct {
 	max               float64
 }
 
+func (a *statsArray) Copy() *statsArray {
+	result := statsArray{
+		xs: make([]float64, len(a.xs)),
+	}
+
+	copy(result.xs, a.xs)
+
+	if a.summary != nil {
+		result.summary = &summary{
+			a.summary.mean,
+			a.summary.standardDeviation,
+			a.summary.min,
+			a.summary.max,
+		}
+	}
+
+	return &result
+}
+
 func (a *statsArray) Append(x float64) {
 	a.xs = append(a.xs, x)
 }

@@ -1483,7 +1483,7 @@ func registerLuaResultTypes(ls *lua.LState) {
 			minIndexes := sa.MinIndexes(n)
 			r := ls.CreateTable(len(minIndexes), 0)
 			for i, x := range minIndexes {
-				r.RawSetInt(i+i, lua.LNumber(x))
+				r.RawSetInt(i+1, lua.LNumber(x+1))
 			}
 			ls.Push(r)
 			return 1
@@ -1494,18 +1494,27 @@ func registerLuaResultTypes(ls *lua.LState) {
 			maxIndexes := sa.MaxIndexes(n)
 			r := ls.CreateTable(len(maxIndexes), 0)
 			for i, x := range maxIndexes {
-				r.RawSetInt(i+i, lua.LNumber(x))
+				r.RawSetInt(i+1, lua.LNumber(x+1))
 			}
 			ls.Push(r)
 			return 1
 		},
-
 		"clamp": func(ls *lua.LState) int {
 			sa := assertStatsArray(ls, 1)
 			min := ls.CheckInt(2)
 			max := ls.CheckInt(3)
 			sa.Clamp(float64(min), float64(max))
 			ls.Push(ls.Get(1))
+			return 1
+		},
+		"copy": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+
+			ud := ls.NewUserData()
+			ud.Value = sa.Copy()
+			ud.Metatable = ls.GetTypeMetatable(luaStatsArrayTypeName)
+
+			ls.Push(ud)
 			return 1
 		},
 	})
