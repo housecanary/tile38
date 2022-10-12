@@ -7,13 +7,13 @@ import (
 )
 
 func subTestScripts(t *testing.T, mc *mockServer) {
-	// runStep(t, mc, "BASIC", scripts_BASIC_test)
-	// runStep(t, mc, "ATOMIC", scripts_ATOMIC_test)
-	// runStep(t, mc, "READONLY", scripts_READONLY_test)
-	// runStep(t, mc, "NONATOMIC", scripts_NONATOMIC_test)
-	// runStep(t, mc, "ITERATE", scripts_ITERATE_test)
-
+	runStep(t, mc, "BASIC", scripts_BASIC_test)
+	runStep(t, mc, "ATOMIC", scripts_ATOMIC_test)
+	runStep(t, mc, "READONLY", scripts_READONLY_test)
+	runStep(t, mc, "NONATOMIC", scripts_NONATOMIC_test)
+	runStep(t, mc, "ITERATE", scripts_ITERATE_test)
 	runStep(t, mc, "MATH", scripts_MATH_test)
+	runStep(t, mc, "STATS", scripts_STATSARRAY_test)
 }
 
 func scripts_BASIC_test(mc *mockServer) error {
@@ -178,5 +178,24 @@ func scripts_MATH_test(mc *mockServer) error {
 	return mc.DoBatch([][]interface{}{
 		{"EVAL", script_cdf, 0}, {"[13]"},
 		{"EVAL", script_mean_std_min_max, 0}, {"[88 8 77 99]"},
+	})
+}
+
+func scripts_STATSARRAY_test(mc *mockServer) error {
+	script := `
+		local data = tile38.new_stats_array()
+		data:append(100)
+		data:append(110)
+		data:append(200)
+		data:append(210)
+
+		local min_cdf = data:cdf(data:min())
+		local cdf = data:cdf(200)
+
+		return {min_cdf*100, cdf*100}
+	`
+
+	return mc.DoBatch([][]interface{}{
+		{"EVAL", script, 0}, {"[13 81]"},
 	})
 }

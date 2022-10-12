@@ -230,6 +230,15 @@ func (pl *lStatePool) new() *lua.LState {
 		return 1
 	}
 
+	makeStatsArray := func(ls *lua.LState) int {
+		mt := ls.GetTypeMetatable(luaStatsArrayTypeName)
+		ud := ls.NewUserData()
+		ud.Value = &statsArray{}
+		ud.Metatable = mt
+		ls.Push(ud)
+		return 1
+	}
+
 	baseIterate := func(ls *lua.LState, pcall bool) (string, error) {
 		evalCmd := ls.GetGlobal("EVAL_CMD").String()
 		ts := ls.GetGlobal("TXN_STATUS").(*lua.LUserData).Value.(*txn.Status)
@@ -333,6 +342,7 @@ func (pl *lStatePool) new() *lua.LState {
 		"get":              getObject,
 		"mean_std_min_max": meanStdMinMax,
 		"cdf":              cdf,
+		"new_stats_array":  makeStatsArray,
 	}
 	L.SetGlobal("tile38", L.SetFuncs(L.NewTable(), exports))
 
@@ -1274,6 +1284,7 @@ func (s *Server) luaTile38Get(ls *lua.LState, evalcmd, key, id string) (result l
 const luaGeoJSONObjectTypeName = "geojsonObject"
 const luaScanIteratorTypeName = "scanIterator"
 const luaItemTypeName = "collectionItem"
+const luaStatsArrayTypeName = "statsArray"
 
 type luaScanIterator struct {
 	sc            *scanner
@@ -1466,6 +1477,160 @@ func registerLuaResultTypes(ls *lua.LState) {
 		ls.ArgError(idx, "collection item expected")
 		return &luaCollectionItem{}
 	}
+
+	assertStatsArray := func(ls *lua.LState, idx int) *statsArray {
+		ud := ls.CheckUserData(idx)
+		if v, ok := ud.Value.(*statsArray); ok {
+			return v
+		}
+		ls.ArgError(idx, "statsarray expected")
+		return &statsArray{}
+	}
+
+	makeStatArrayUpdateFunc := func(aryF func(*statsArray, *statsArray), scalarF func(*statsArray, float64)) func(ls *lua.LState) int {
+		return func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			v := ls.CheckAny(2)
+			switch v.Type() {
+			case lua.LTUserData:
+				sa2 := assertStatsArray(ls, 2)
+				aryF(sa, sa2)
+				ls.Push(ls.Get(1))
+				return 1
+			case lua.LTNumber:
+				scalarF(sa, float64(v.(lua.LNumber)))
+				ls.Push(ls.Get(1))
+				return 1
+			}
+			ls.RaiseError("unsupported argument: %s", v)
+			return 0
+		}
+	}
+
+	statsmethodtable := ls.NewTable()
+	ls.SetFuncs(statsmethodtable, map[string]lua.LGFunction{
+		"append": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			n := ls.CheckNumber(2)
+			sa.Append(float64(n))
+			return 0
+		},
+		"mean": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			ls.Push(lua.LNumber(sa.Mean()))
+			return 1
+		},
+		"min": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			ls.Push(lua.LNumber(sa.Min()))
+			return 1
+		},
+		"max": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			ls.Push(lua.LNumber(sa.Max()))
+			return 1
+		},
+		"cdf": func(ls *lua.LState) int {
+			nargs := ls.GetTop()
+			sa := assertStatsArray(ls, 1)
+			switch nargs {
+			case 1:
+				sa.CDF()
+				ls.Push(ls.Get(1))
+				return 1
+			case 2:
+				v := ls.CheckNumber(2)
+				result := sa.CDFOf(float64(v))
+				ls.Push(lua.LNumber(result))
+				return 1
+			}
+			ls.RaiseError("unsupported number of arguments")
+			return 0
+		},
+		"min_indexes": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			n := ls.CheckInt(2)
+			minIndexes := sa.MinIndexes(n)
+			r := ls.CreateTable(len(minIndexes), 0)
+			for i, x := range minIndexes {
+				r.RawSetInt(i+i, lua.LNumber(x))
+			}
+			ls.Push(r)
+			return 1
+		},
+		"max_indexes": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			n := ls.CheckInt(2)
+			maxIndexes := sa.MaxIndexes(n)
+			r := ls.CreateTable(len(maxIndexes), 0)
+			for i, x := range maxIndexes {
+				r.RawSetInt(i+i, lua.LNumber(x))
+			}
+			ls.Push(r)
+			return 1
+		},
+
+		"clamp": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			min := ls.CheckInt(2)
+			max := ls.CheckInt(3)
+			sa.Clamp(float64(min), float64(max))
+			ls.Push(ls.Get(1))
+			return 1
+		},
+	})
+
+	statsarraymt := ls.NewTypeMetatable(luaStatsArrayTypeName)
+	ls.SetFuncs(statsarraymt, map[string]lua.LGFunction{
+		"__index": func(ls *lua.LState) int {
+			sa := assertStatsArray(ls, 1)
+			v := ls.CheckAny(2)
+			switch v.Type() {
+			case lua.LTNumber:
+				index := int(v.(lua.LNumber))
+				if index > 0 && index <= len(sa.xs) {
+					ls.Push(lua.LNumber(sa.xs[index-1]))
+					return 1
+				}
+				return 0
+			default:
+				ls.Push(statsmethodtable.RawGetH(v))
+				return 1
+			}
+		},
+		"__add": makeStatArrayUpdateFunc(
+			func(a *statsArray, b *statsArray) {
+				a.AddArray(b)
+			},
+			func(a *statsArray, b float64) {
+				a.AddScalar(b)
+			},
+		),
+		"__sub": makeStatArrayUpdateFunc(
+			func(a *statsArray, b *statsArray) {
+				a.SubArray(b)
+			},
+			func(a *statsArray, b float64) {
+				a.SubScalar(b)
+			},
+		),
+		"__mul": makeStatArrayUpdateFunc(
+			func(a *statsArray, b *statsArray) {
+				a.MultArray(b)
+			},
+			func(a *statsArray, b float64) {
+				a.MultScalar(b)
+			},
+		),
+		"__div": makeStatArrayUpdateFunc(
+			func(a *statsArray, b *statsArray) {
+				a.DivArray(b)
+			},
+			func(a *statsArray, b float64) {
+				a.DivScalar(b)
+			},
+		),
+	})
 
 	readItemFields := ls.NewFunction(func(ls *lua.LState) int {
 		item := assertCollectionItem(ls, 1)
