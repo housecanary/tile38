@@ -164,6 +164,8 @@ func (mc *mockServer) DoBatch(commands ...interface{}) error { //[][]interface{}
 				if dur, ok := cmds[0].(time.Duration); ok {
 					time.Sleep(dur)
 				} else {
+					start := time.Now()
+
 					if err := mc.DoExpect(commands[i+1][0], cmds[0].(string), cmds[1:]...); err != nil {
 						if tag == "" {
 							return fmt.Errorf("batch[%d]: %v", i/2, err)
@@ -171,6 +173,8 @@ func (mc *mockServer) DoBatch(commands ...interface{}) error { //[][]interface{}
 							return fmt.Errorf("batch[%d][%v]: %v", i/2, tag, err)
 						}
 					}
+
+					fmt.Printf("command ran in %v\n", time.Since(start))
 				}
 			}
 			tag = ""

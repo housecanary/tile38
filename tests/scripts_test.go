@@ -12,6 +12,7 @@ func subTestScripts(t *testing.T, mc *mockServer) {
 	runStep(t, mc, "READONLY", scripts_READONLY_test)
 	runStep(t, mc, "NONATOMIC", scripts_NONATOMIC_test)
 	runStep(t, mc, "ITERATE", scripts_ITERATE_test)
+	runStep(t, mc, "STATS", scripts_STATSARRAY_test)
 }
 
 func scripts_BASIC_test(mc *mockServer) error {
@@ -144,5 +145,53 @@ func scripts_ITERATE_test(mc *mockServer) error {
 		{"EVAL", script_obj, 0}, {"[0 [" + poly9 + "]]"}, // no early stop, cursor = 0
 		{"EVAL", script_fields, 0}, {"[1 [[1 10]]]"}, // early stop, cursor = 1
 		{"EVAL", script_nearby_ids, 0}, {"[1 [poly10]]"}, // early stop, cursor = 1
+	})
+
+}
+
+func scripts_STATSARRAY_test(mc *mockServer) error {
+	script_cdf := `
+		local data = tile38.new_stats_array()
+		data:append(100)
+		data:append(110)
+		data:append(200)
+		data:append(210)
+
+		local min_cdf = data:cdf(data:min())
+		local cdf = data:cdf(200)
+
+		return {min_cdf*100, cdf*100}
+	`
+
+	script_copy := `
+		local data = tile38.new_stats_array()
+		data:append(100)
+		data:append(110)
+		data:append(200)
+		data:append(210)
+
+		local data_copy = data:copy()
+		
+		data = data + 100
+
+		return {data[1], data[2], data_copy[1], data_copy[2]}
+	`
+
+	script_max := `
+		local data = tile38.new_stats_array()
+		data:append(100)
+		data:append(110)
+		data:append(200)
+		data:append(210)
+
+		local indexes = data:max_indexes(2)
+		
+		return indexes
+	`
+
+	return mc.DoBatch([][]interface{}{
+		{"EVAL", script_cdf, 0}, {"[13 81]"},
+		{"EVAL", script_copy, 0}, {"[200 210 100 110]"},
+		{"EVAL", script_max, 0}, {"[4 3]"},
 	})
 }
