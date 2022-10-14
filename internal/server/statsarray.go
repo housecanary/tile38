@@ -84,14 +84,24 @@ func (a *statsArray) summarize() *summary {
 
 func (a *statsArray) CDF() {
 	μ, σ := a.Mean(), a.StandardDeviation()
+
 	for i, x := range a.xs {
-		a.xs[i] = 0.5 * (1 + math.Erf((x-μ)/(σ*math.Sqrt2)))
+		if σ <= 0 {
+			a.xs[i] = 0
+		} else {
+			a.xs[i] = 0.5 * (1 + math.Erf((x-μ)/(σ*math.Sqrt2)))
+		}
 	}
 }
 
 func (a *statsArray) CDFOf(x float64) float64 {
 	μ, σ := a.Mean(), a.StandardDeviation()
-	return 0.5 * (1 + math.Erf((x-μ)/(σ*math.Sqrt2)))
+
+	if σ <= 0 {
+		return 0
+	} else {
+		return 0.5 * (1 + math.Erf((x-μ)/(σ*math.Sqrt2)))
+	}
 }
 
 func (a *statsArray) MinIndexes(n int) []int {
