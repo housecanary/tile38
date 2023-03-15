@@ -28,7 +28,7 @@ require (
 	github.com/tidwall/tinybtree v0.0.0-20181217131827-de5932d649b5
 	github.com/yuin/gopher-lua v0.0.0-20170915035107-eb1c7299435c
 	golang.org/x/crypto v0.0.0-20221005025214-4161e89ecf1b
-	golang.org/x/net v0.4.0
+	golang.org/x/net v0.8.0
 	google.golang.org/grpc v1.31.0
 	layeh.com/gopher-json v0.0.0-20161224164157-c128cc74278b
 )
@@ -59,9 +59,9 @@ require (
 	github.com/tidwall/rbang v1.2.2 // indirect
 	github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e // indirect
 	github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563 // indirect
-	golang.org/x/sys v0.3.0 // indirect
-	golang.org/x/term v0.3.0 // indirect
-	golang.org/x/text v0.5.0 // indirect
+	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/term v0.6.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
 	google.golang.org/genproto v0.0.0-20200825200019-8632dd797987 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 )
