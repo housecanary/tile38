@@ -19,6 +19,8 @@ type Scheduler struct {
 	readPermit    chan voidType
 	writePermit   chan voidType
 	opComplete    chan time.Duration
+
+	stats SchedulerStats
 }
 
 func NewScheduler(initialWriteDelay time.Duration, maxReadDelay time.Duration) (*Scheduler, func()) {
@@ -37,19 +39,24 @@ func NewScheduler(initialWriteDelay time.Duration, maxReadDelay time.Duration) (
 }
 
 func (s *Scheduler) Write() (done func()) {
+	atomic.AddInt64(&s.stats.requestedWrites, 1)
 	s.writeRequests <- void
 	<-s.writePermit
-	return s.opDone
+	return s.writeDone
 }
 
 func (s *Scheduler) Read() (done func()) {
+	atomic.AddInt64(&s.stats.requestedReads, 1)
 	s.readRequests <- void
 	<-s.readPermit
-	return s.opDone
+	return s.readDone
 }
 
 func (s *Scheduler) Scan() (done func(), status *Status) {
-	return s.Read(), &Status{
+	atomic.AddInt64(&s.stats.requestedScans, 1)
+	s.readRequests <- void
+	<-s.readPermit
+	return s.scanDone, &Status{
 		scanStatus: &scanStatus{
 			startTime:   time.Now().UnixNano(),
 			interrupted: &s.interrupt,
@@ -58,8 +65,13 @@ func (s *Scheduler) Scan() (done func(), status *Status) {
 	}
 }
 
+func (s *Scheduler) Stats() *SchedulerStats {
+	return &s.stats
+}
+
 func (s *Scheduler) schedule(done chan voidType, writeDelay time.Duration, maxReadDelay time.Duration) {
 	inflight := 0
+	maxWriteDelay := writeDelay
 	timer := time.NewTimer(0)
 	if !timer.Stop() {
 		<-timer.C
@@ -123,6 +135,8 @@ scheduler:
 		//
 		// on complete: decrement inflight
 		maxRuntime := time.Duration(-1)
+		interruptedRuntime := time.Duration(0)
+		interruptions := int64(0)
 		atomic.StoreUint32(&s.interrupt, 1)
 	waitReadsDone:
 		for {
@@ -134,6 +148,10 @@ scheduler:
 				inflight--
 				if runtime > maxRuntime {
 					maxRuntime = runtime
+				}
+				if runtime > -1 {
+					interruptions++
+					interruptedRuntime += runtime
 				}
 			case <-done:
 				break scheduler
@@ -153,6 +171,14 @@ scheduler:
 			writeDelay = 1 * time.Minute
 		} else if writeDelay < 1*time.Millisecond {
 			writeDelay = 1 * time.Millisecond
+		}
+
+		atomic.AddInt64(&s.stats.scanInterruptions, interruptions)
+		atomic.AddInt64(&s.stats.partialCompletionScanTime, interruptedRuntime.Nanoseconds())
+		atomic.StoreInt64(&s.stats.currentWriteDelay, writeDelay.Nanoseconds())
+		if writeDelay > maxWriteDelay {
+			maxWriteDelay = writeDelay
+			atomic.StoreInt64(&s.stats.maxWriteDelay, writeDelay.Nanoseconds())
 		}
 
 		// write phase
@@ -218,11 +244,109 @@ scheduler:
 	}
 }
 
+func (s *Scheduler) writeDone() {
+	atomic.AddInt64(&s.stats.completedWrites, 1)
+	s.opDone()
+}
+
+func (s *Scheduler) readDone() {
+	atomic.AddInt64(&s.stats.completedReads, 1)
+	s.opDone()
+}
+
+func (s *Scheduler) scanDone() {
+	atomic.AddInt64(&s.stats.completedScans, 1)
+	s.opDone()
+}
+
 func (s *Scheduler) opDone() {
 	s.opComplete <- -1
 }
 
 func (s *Scheduler) opInterrupted(runtime time.Duration) {
 	s.opComplete <- runtime
-	s.Read()
+	s.readRequests <- void
+	<-s.readPermit
+}
+
+type SchedulerStats struct {
+	// Current write delay period in seconds
+	currentWriteDelay int64
+
+	// Maximum write delay in this scheduler so far
+	maxWriteDelay int64
+
+	// Amount of time spent on scans that eventually had to be interrupted
+	partialCompletionScanTime int64
+
+	// Number of interruptions
+	scanInterruptions int64
+
+	// Current number of writes requested
+	requestedWrites int64
+
+	// Current number of reads requested
+	requestedReads int64
+
+	// Current number of scans requested
+	requestedScans int64
+
+	// Number of writes completed
+	completedWrites int64
+
+	// Number of reads completed
+	completedReads int64
+
+	// Number of scans completed
+	completedScans int64
+}
+
+func (ss *SchedulerStats) CurrentWriteDelay() float64 {
+	current := atomic.LoadInt64(&ss.currentWriteDelay)
+	return float64(current) / float64(time.Second)
+}
+
+func (ss *SchedulerStats) MaxWriteDelay() float64 {
+	current := atomic.LoadInt64(&ss.maxWriteDelay)
+	return float64(current) / float64(time.Second)
+}
+
+func (ss *SchedulerStats) PartialCompletionScanTime() float64 {
+	current := atomic.LoadInt64(&ss.partialCompletionScanTime)
+	return float64(current) / float64(time.Second)
+}
+
+func (ss *SchedulerStats) ScanInterruptions() float64 {
+	current := atomic.LoadInt64(&ss.scanInterruptions)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) RequestedWrites() float64 {
+	current := atomic.LoadInt64(&ss.requestedWrites)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) RequestedReads() float64 {
+	current := atomic.LoadInt64(&ss.requestedReads)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) RequestedScans() float64 {
+	current := atomic.LoadInt64(&ss.requestedScans)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) CompletedWrites() float64 {
+	current := atomic.LoadInt64(&ss.completedWrites)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) CompletedReads() float64 {
+	current := atomic.LoadInt64(&ss.completedReads)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) CompletedScans() float64 {
+	current := atomic.LoadInt64(&ss.completedScans)
+	return float64(current)
 }

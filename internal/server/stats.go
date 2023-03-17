@@ -789,6 +789,58 @@ func (s *Server) EnablePrometheusStats(registry prometheus.Registerer) {
 		},
 	})
 
+	registry.MustRegister(&simpleCollector{
+		desc: prometheus.NewDesc("tile38_scheduler_requested_operations_total", "", []string{"operation"}, nil),
+		collect: func(desc *prometheus.Desc, obs chan<- prometheus.Metric) {
+			ss := s.scheduler.Stats()
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.RequestedReads(), "read")
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.RequestedWrites(), "write")
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.RequestedScans(), "scan")
+		},
+	})
+
+	registry.MustRegister(&simpleCollector{
+		desc: prometheus.NewDesc("tile38_scheduler_completed_operations_total", "", []string{"operation"}, nil),
+		collect: func(desc *prometheus.Desc, obs chan<- prometheus.Metric) {
+			ss := s.scheduler.Stats()
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.CompletedReads(), "read")
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.CompletedWrites(), "write")
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.CompletedScans(), "scan")
+		},
+	})
+
+	registry.MustRegister(&simpleCollector{
+		desc: prometheus.NewDesc("tile38_scheduler_scan_interruptions_total", "", nil, nil),
+		collect: func(desc *prometheus.Desc, obs chan<- prometheus.Metric) {
+			ss := s.scheduler.Stats()
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.ScanInterruptions())
+		},
+	})
+
+	registry.MustRegister(&simpleCollector{
+		desc: prometheus.NewDesc("tile38_scheduler_scan_partial_completion_seconds", "", nil, nil),
+		collect: func(desc *prometheus.Desc, obs chan<- prometheus.Metric) {
+			ss := s.scheduler.Stats()
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.PartialCompletionScanTime())
+		},
+	})
+
+	registry.MustRegister(&simpleCollector{
+		desc: prometheus.NewDesc("tile38_scheduler_current_write_delay", "", nil, nil),
+		collect: func(desc *prometheus.Desc, obs chan<- prometheus.Metric) {
+			ss := s.scheduler.Stats()
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.CurrentWriteDelay())
+		},
+	})
+
+	registry.MustRegister(&simpleCollector{
+		desc: prometheus.NewDesc("tile38_scheduler_max_write_delay", "", nil, nil),
+		collect: func(desc *prometheus.Desc, obs chan<- prometheus.Metric) {
+			ss := s.scheduler.Stats()
+			obs <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ss.MaxWriteDelay())
+		},
+	})
+
 	requests := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "tile38",
 		Name:      "request_duration_seconds",
