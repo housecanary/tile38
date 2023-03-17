@@ -15,7 +15,8 @@ func TestScheduler(t *testing.T) {
 	maxWriteDuration := time.Second / 3
 	scanDuration := time.Second
 	maxWriteWait := scanDuration * 2
-	sched := NewScheduler(250*time.Millisecond, maxWriteDuration)
+	sched, cancel := NewScheduler(250*time.Millisecond, maxWriteDuration)
+	defer cancel()
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
 	defer cancel()
@@ -89,7 +90,8 @@ func TestScheduler(t *testing.T) {
 }
 
 func BenchmarkSchedulerUncontendedRead(b *testing.B) {
-	sched := NewScheduler(1*time.Second, time.Second/3)
+	sched, cancel := NewScheduler(1*time.Second, time.Second/3)
+	defer cancel()
 	for i := 0; i < b.N; i++ {
 		sched.Read()()
 	}
@@ -104,7 +106,8 @@ func BenchmarkRWMutexUncontendedRead(b *testing.B) {
 }
 
 func BenchmarkSchedulerUncontendedWrite(b *testing.B) {
-	sched := NewScheduler(1*time.Second, time.Second/3)
+	sched, cancel := NewScheduler(1*time.Second, time.Second/3)
+	defer cancel()
 	for i := 0; i < b.N; i++ {
 		sched.Write()()
 	}
@@ -120,7 +123,8 @@ func BenchmarkRWMutexUncontendedWrite(b *testing.B) {
 
 func BenchmarkSchedulerContended(b *testing.B) {
 	var wg sync.WaitGroup
-	sched := NewScheduler(1*time.Second, time.Second/3)
+	sched, cancel := NewScheduler(1*time.Second, time.Second/3)
+	defer cancel()
 
 	wg.Add(1)
 	go func() {
@@ -192,7 +196,8 @@ func TestStarvation(t *testing.T) {
 	var scanRestarts int32
 
 	var wg sync.WaitGroup
-	sched := NewScheduler(200*time.Millisecond, 50*time.Millisecond)
+	sched, cancel := NewScheduler(200*time.Millisecond, 50*time.Millisecond)
+	defer cancel()
 
 	done := int32(0)
 
@@ -240,21 +245,27 @@ func TestStarvation(t *testing.T) {
 				defer cleanup()
 				wait := time.Now().Sub(start)
 				deadline := time.Now().Add(scanTime)
+
+				iters := 0
 				for {
 					time.Sleep(readTime)
 					if atomic.LoadInt32(&done) != 0 {
 						return
 					}
 					if ts.IsAborted() {
+						iters++
+						//fmt.Println("restart", iters, time.Since(start))
 						atomic.AddInt32(&scanRestarts, 1)
 						deadline = time.Now().Add(scanTime)
 						start = time.Now()
 						ts.Retry()
+						//fmt.Println("done wait", iters, time.Since(start))
 						wait += time.Now().Sub(start)
 					}
 					if time.Now().After(deadline) {
 						atomic.AddInt64(&scanWaitTime, int64(wait/time.Millisecond))
 						atomic.AddInt32(&scanCount, 1)
+						//fmt.Println("scan done")
 						return
 					}
 				}
@@ -293,7 +304,8 @@ func TestStarvation(t *testing.T) {
 func TestReaderLockout(t *testing.T) {
 	var wg sync.WaitGroup
 
-	sched := NewScheduler(200*time.Millisecond, 50*time.Millisecond)
+	sched, cancel := NewScheduler(200*time.Millisecond, 50*time.Millisecond)
+	defer cancel()
 
 	scanDone, ts := sched.Scan()
 	for i := 0; i < 5; i++ {
