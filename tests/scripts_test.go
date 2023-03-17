@@ -13,6 +13,7 @@ func subTestScripts(t *testing.T, mc *mockServer) {
 	runStep(t, mc, "NONATOMIC", scripts_NONATOMIC_test)
 	runStep(t, mc, "ITERATE", scripts_ITERATE_test)
 	runStep(t, mc, "STATS", scripts_STATSARRAY_test)
+	runStep(t, mc, "GEOJSON", scripts_GEOJSON_test)
 }
 
 func scripts_BASIC_test(mc *mockServer) error {
@@ -193,5 +194,67 @@ func scripts_STATSARRAY_test(mc *mockServer) error {
 		{"EVAL", script_cdf, 0}, {"[13 81]"},
 		{"EVAL", script_copy, 0}, {"[200 210 100 110]"},
 		{"EVAL", script_max, 0}, {"[4 3]"},
+	})
+}
+
+func scripts_GEOJSON_test(mc *mockServer) error {
+	script_intersects := `
+		local polygon = tile38.parse_geojson([[{
+			"type": "Feature",
+			"properties": {},
+			"geometry": {
+				"coordinates": [
+					[
+						[
+							-104.92998031131985,
+							45.8681422652939
+						],
+						[
+							-106.89653304569455,
+							44.74003119231227
+						],
+						[
+							-104.77617171756981,
+							43.42213488711113
+						],
+				 		[
+							-104.92998031131985,
+							45.8681422652939
+						]
+					]
+				],
+				"type": "Polygon"
+			}
+		}]])
+
+		local inpt = tile38.parse_geojson([[{
+			"type": "Feature",
+			"properties": {},
+			"geometry": {
+				"coordinates": [
+					-105.51225570194451,
+					44.68537966147633
+				],
+				"type": "Point"
+			}
+		}]])
+
+		local outpt = tile38.parse_geojson([[{
+			"type": "Feature",
+			"properties": {},
+			"geometry": {
+				"coordinates": [
+					-102.82060531131947,
+					45.004747352429604
+				],
+				"type": "Point"
+			}
+		}]])
+
+		return {polygon:intersects(inpt), polygon:intersects(outpt)}
+	`
+
+	return mc.DoBatch([][]interface{}{
+		{"EVAL", script_intersects, 0}, {"[1 nil]"},
 	})
 }
