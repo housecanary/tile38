@@ -187,8 +187,8 @@ func (whereeval whereevalT) Close() {
 	luaSetRawGlobals(
 		whereeval.luaState, map[string]lua.LValue{
 			"EVAL_CMD": lua.LNil,
-			"ARGV": 	lua.LNil,
-			"OBJ": 		lua.LNil,
+			"ARGV":     lua.LNil,
+			"OBJ":      lua.LNil,
 		})
 	whereeval.s.luapool.Put(whereeval.luaState)
 }
@@ -251,6 +251,7 @@ type searchScanBaseTokens struct {
 	sparse     uint8
 	desc       bool
 	clip       bool
+	noresume   bool
 }
 
 func (s *Server) parseSearchScanBaseTokens(
@@ -586,6 +587,14 @@ func (s *Server) parseSearchScanBaseTokens(
 					return
 				}
 				t.clip = true
+				continue
+			case "noresume":
+				vs = nvs
+				if t.noresume {
+					err = errDuplicateArgument(strings.ToUpper(wtok))
+					return
+				}
+				t.noresume = true
 				continue
 			}
 		}

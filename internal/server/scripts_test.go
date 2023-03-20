@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-func runScriptFunc(callback lua.LGFunction, fn string, deadline time.Time) ([]lua.LValue, *lua.LState) {
+func runScriptFunc(callback lua.LGFunction, fn string, deadline time.Time, timeoutSecs float64, noresume bool) ([]lua.LValue, *lua.LState) {
 	itemCount := 5000
 	s := &Server{
 		config:  &Config{},
@@ -36,7 +37,8 @@ func runScriptFunc(callback lua.LGFunction, fn string, deadline time.Time) ([]lu
 		panic(err)
 	}
 
-	sched := txn.NewScheduler(0, 0)
+	sched, cancel := txn.NewScheduler(0, 0)
+	defer cancel()
 	scanDone, ts := sched.Scan()
 	defer func() {
 		if scanDone != nil {
@@ -78,7 +80,25 @@ func runScriptFunc(callback lua.LGFunction, fn string, deadline time.Time) ([]lu
 		ls.Push(ls.NewFunction(callback))
 		nargs++
 	}
-	for _, a := range []string{"nearby", "test", "cursor", "100", "limit", "2000/4000", "where", "v", "1", "1", "ids", "point", "0", "0"} {
+
+	if timeoutSecs != 0 {
+		ls.Push(lua.LString("timeout"))
+		nargs++
+
+		ls.Push(lua.LString(strconv.FormatFloat(timeoutSecs, 'f', -1, 64)))
+		nargs++
+	}
+	for _, a := range []string{"nearby", "test", "cursor", "100", "limit", "2000/4000"} {
+		ls.Push(lua.LString(a))
+		nargs++
+	}
+
+	if noresume {
+		ls.Push(lua.LString("noresume"))
+		nargs++
+	}
+
+	for _, a := range []string{"where", "v", "1", "1", "ids", "point", "0", "0"} {
 		ls.Push(lua.LString(a))
 		nargs++
 	}
@@ -102,7 +122,7 @@ func runScriptFunc(callback lua.LGFunction, fn string, deadline time.Time) ([]lu
 }
 
 func TestScriptCallInterruptedCall(t *testing.T) {
-	results, _ := runScriptFunc(nil, "call", time.Time{})
+	results, _ := runScriptFunc(nil, "call", time.Time{}, 0, false)
 
 	if len(results) != 1 {
 		t.Fatal("expected 1 results")
@@ -117,7 +137,7 @@ func TestScriptCallTimeoutCall(t *testing.T) {
 				panicResult = r
 			}
 		}()
-		_, _ = runScriptFunc(nil, "call", time.Now().Add(-1))
+		_, _ = runScriptFunc(nil, "call", time.Now().Add(-1), 0, false)
 	}()
 
 	if panicResult == nil {
@@ -137,7 +157,7 @@ func TestScriptIterateInterruptedCall(t *testing.T) {
 		collectedIds = append(collectedIds, itr.currentParams.id)
 		ls.Push(lua.LTrue)
 		return 1
-	}), "iterate", time.Time{})
+	}), "iterate", time.Time{}, 0, false)
 
 	if len(results) != 1 {
 		t.Fatal("expected 1 results")
@@ -171,7 +191,7 @@ func TestScriptIterateTimeoutCall(t *testing.T) {
 		_, _ = runScriptFunc(lua.LGFunction(func(ls *lua.LState) int {
 			ls.Push(lua.LTrue)
 			return 1
-		}), "iterate", time.Now().Add(-1))
+		}), "iterate", time.Now().Add(-1), 0, false)
 	}()
 
 	if panicResult == nil {
@@ -183,11 +203,11 @@ func TestScriptIterateTimeoutCall(t *testing.T) {
 	}
 }
 
-func TestScriptPiterateInterruptedCall(t *testing.T) {
+func TestScriptPiterateInterruptedCall_noresume(t *testing.T) {
 	results, _ := runScriptFunc(lua.LGFunction(func(ls *lua.LState) int {
 		ls.Push(lua.LTrue)
 		return 1
-	}), "piterate", time.Time{})
+	}), "piterate", time.Time{}, 0, true)
 
 	if len(results) != 2 {
 		t.Fatal("expected 2 results")
@@ -202,11 +222,46 @@ func TestScriptPiterateInterruptedCall(t *testing.T) {
 	}
 }
 
+func TestScriptPiterateInterruptedCall(t *testing.T) {
+	var collectedIds []string
+	results, _ := runScriptFunc(lua.LGFunction(func(ls *lua.LState) int {
+		ud := ls.ToUserData(1)
+		itr := ud.Value.(*luaScanIterator)
+		collectedIds = append(collectedIds, itr.currentParams.id)
+		ls.Push(lua.LTrue)
+		return 1
+	}), "piterate", time.Time{}, 0, false)
+
+	if len(results) != 2 {
+		t.Fatal("expected 2 results")
+	}
+
+	if results[0] != lua.LTrue {
+		t.Fatal("expected result 0 to be LTrue, got ", results[0])
+	}
+
+	if results[1].String() != "4100" {
+		t.Fatal("expected cursor 4100, got", results[1])
+	}
+
+	if len(collectedIds) != 2000 {
+		t.Fatal("expected", 2000, "got", len(collectedIds))
+	}
+
+	if collectedIds[0] != "101" {
+		t.Fatal("expected first id to be 101 not", collectedIds[0])
+	}
+
+	if collectedIds[1999] != "4099" {
+		t.Fatal("expected last id to be 4099 not", collectedIds[1999])
+	}
+}
+
 func TestScriptPiterateTimeoutCall(t *testing.T) {
 	results, _ := runScriptFunc(lua.LGFunction(func(ls *lua.LState) int {
 		ls.Push(lua.LTrue)
 		return 1
-	}), "piterate", time.Now().Add(-1))
+	}), "piterate", time.Now().Add(-1), 0, false)
 
 	if len(results) != 2 {
 		t.Fatal("expected 2 results")
@@ -225,7 +280,7 @@ func TestScriptPiterateTimeoutCall_ignored(t *testing.T) {
 	results, ls := runScriptFunc(lua.LGFunction(func(ls *lua.LState) int {
 		ls.Push(lua.LTrue)
 		return 1
-	}), "piterate", time.Now().Add(-1))
+	}), "piterate", time.Now().Add(-1), 0, false)
 
 	if len(results) != 2 {
 		t.Fatal("expected 2 results")
@@ -242,5 +297,24 @@ func TestScriptPiterateTimeoutCall_ignored(t *testing.T) {
 	err := ls.DoString("print(\"hello\")")
 	if err == nil {
 		t.Fatal("expected to get an error")
+	}
+}
+
+func TestScriptPiterateTimeoutCall_incmd(t *testing.T) {
+	results, _ := runScriptFunc(lua.LGFunction(func(ls *lua.LState) int {
+		ls.Push(lua.LTrue)
+		return 1
+	}), "piterate", time.Time{}, 0.0000000000000000000000001, false)
+
+	if len(results) != 2 {
+		t.Fatal("expected 2 results")
+	}
+
+	if results[0] != lua.LFalse {
+		t.Fatal("expected result 0 to be LFalse, got ", results[0])
+	}
+
+	if s, ok := results[1].(lua.LString); !ok || s != "deadline" {
+		t.Fatal("expected result 1 to be \"deadline\", got ", results[1])
 	}
 }

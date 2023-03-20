@@ -1,219 +1,352 @@
 package txn
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 )
 
-const maxReaders = 1 << 30
+type voidType struct{}
+
+var void = voidType{}
 
 type Scheduler struct {
-	readDeadline int64  // Deadline for all reads to complete prior to scheduling a write, atomic access required
-	interrupted  uint32 // Whether any readers were interrupted to enter write phase, atomic access required
+	interrupt     uint32
+	readBarrier   uint32
+	inflightReads uint64
 
-	readerCount       int32 // Number of currently executing readers, atomic access required
-	pausedReaderCount int32 // Number of readers paused waiting for writers
-	writerCount       int32 // Number of currently executing or waiting writers
-	writeDeadline     int64 // Deadline for writes to complete prior to allowing reads
-	writing           bool  // Write phase currently in progress
+	readRequests  chan voidType
+	writeRequests chan voidType
+	readPermit    chan voidType
+	writePermit   chan voidType
+	opComplete    chan time.Duration
 
-	mu         sync.Mutex // Mutex guarding readerCount, writerCount, readDeadline, writeDeadline, writing
-	endWrites  *sync.Cond // Broadcasts when the write phase is complete (writing transitions from true to false)
-	writerDone *sync.Cond // Signals when a write completes and other writes are pending
-	noReaders  *sync.Cond // Signals when no readers are executing
-
-	writeDelay time.Duration // Maximum time we will wait for ability enter a write phase - after this time we will interrupt scanners
-	readDelay  time.Duration // Maximum time we will spend on writes after we enter a write phase
+	stats SchedulerStats
 }
 
-func NewScheduler(initialWriteDelay time.Duration, maxReadDelay time.Duration) *Scheduler {
+func NewScheduler(initialWriteDelay time.Duration, maxReadDelay time.Duration) (*Scheduler, func()) {
 	s := &Scheduler{
-		writeDelay: initialWriteDelay,
-		readDelay:  maxReadDelay,
+		readRequests:  make(chan voidType),
+		writeRequests: make(chan voidType),
+		readPermit:    make(chan voidType),
+		writePermit:   make(chan voidType),
+		opComplete:    make(chan time.Duration),
 	}
-	s.endWrites = sync.NewCond(&s.mu)
-	s.writerDone = sync.NewCond(&s.mu)
-	s.noReaders = sync.NewCond(&s.mu)
-	return s
+	done := make(chan voidType)
+	go s.schedule(done, initialWriteDelay, maxReadDelay)
+	return s, func() {
+		close(done)
+	}
 }
 
 func (s *Scheduler) Write() (done func()) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.writerCount > 0 {
-		// If there's already a writer running, no need to signal readers,
-		// go down the slow path
-		return s.execWriteSlow()
-	}
-
-	// Signal readers a write is pending and slow path should be used
-	nReaders := atomic.AddInt32(&s.readerCount, -maxReaders) + maxReaders - s.pausedReaderCount
-	if nReaders > 0 {
-		// If we need to wait for readers to complete, use slow path
-		return s.execWriteSlow()
-	}
-
-	// Uncontended fast path - no readers or writers running
-	s.writing = true
-	s.writerCount++
-	return s.completeWrite
+	atomic.AddInt64(&s.stats.requestedWrites, 1)
+	s.writeRequests <- void
+	<-s.writePermit
+	return s.writeDone
 }
 
 func (s *Scheduler) Read() (done func()) {
-	nReaders := atomic.AddInt32(&s.readerCount, 1)
-	if nReaders < 0 { // < 0 means a write is pending
-		return s.execReadSlow()
-	}
-
-	// Uncontended read path
-	return s.completeRead
+	atomic.AddInt64(&s.stats.requestedReads, 1)
+	s.readRequests <- void
+	<-s.readPermit
+	return s.readDone
 }
 
 func (s *Scheduler) Scan() (done func(), status *Status) {
-	ts := Status{
-		s: s,
+	atomic.AddInt64(&s.stats.requestedScans, 1)
+	s.readRequests <- void
+	<-s.readPermit
+	return s.scanDone, &Status{
+		scanStatus: &scanStatus{
+			startTime:   time.Now().UnixNano(),
+			interrupted: &s.interrupt,
+			onRetry:     s.opInterrupted,
+		},
 	}
-
-	nReaders := atomic.AddInt32(&s.readerCount, 1)
-	if nReaders < 0 { // < 0 means a write is pending
-		return s.execReadSlow(), &ts
-	}
-
-	// Set signalInterruptedMask since we're guaranteed to get the full time
-	// slice here
-	ts.status = signalInterruptedMask
-
-	// Uncontended read path
-	return s.completeRead, &ts
 }
 
-func (s *Scheduler) execWriteSlow() (done func()) {
-	// One thread is always responsible for attempting to initiate writes and
-	// then signalling subsequent writers to run
-	writeInitiator := false
+func (s *Scheduler) Stats() *SchedulerStats {
+	return &s.stats
+}
 
-	if s.writerCount == 0 {
-		// No other writes pending
-
-		// set a deadline to end scans at
-		atomic.StoreInt64(&s.readDeadline, time.Now().Add(s.writeDelay).UnixNano())
-
-		// take responsibility for initiating the write phase
-		writeInitiator = true
+func (s *Scheduler) schedule(done chan voidType, writeDelay time.Duration, maxReadDelay time.Duration) {
+	inflight := 0
+	maxWriteDelay := writeDelay
+	timer := time.NewTimer(0)
+	if !timer.Stop() {
+		<-timer.C
 	}
-	s.writerCount++
 
+scheduler:
 	for {
-		if writeInitiator {
-			// this goroutine is responsible for initiating the write phase
-
-			// First, wait for all readers to complete. The read deadline we set above should
-			// ensure that long running scanners stop in bounded time.
-			readers := atomic.LoadInt32(&s.readerCount) + maxReaders - s.pausedReaderCount
-			for readers > 0 {
-				s.noReaders.Wait()
-				readers = atomic.LoadInt32(&s.readerCount) + maxReaders - s.pausedReaderCount
+		// read phase
+		//
+		// execute until write request received
+		//
+		// on read request: allow request, increment inflight
+		// on complete: decrement inflight
+		// on write request: set timer for for interrupting reads
+	read:
+		for {
+			select {
+			case <-s.readRequests:
+				inflight++
+				s.readPermit <- void
+			case <-s.opComplete:
+				inflight--
+			case <-s.writeRequests:
+				timer.Reset(writeDelay)
+				break read
+			case <-done:
+				break scheduler
 			}
-
-			// Set the write deadline and mark that we're now writing
-			s.writeDeadline = time.Now().Add(s.readDelay).UnixNano()
-			s.writing = true
-
-			// Adjust the max write delay interval based on whether interruptions happened
-			// If we had to interrupt, double max write delay, if not, shrink by 25%, subject
-			// to reasonable limits
-			if atomic.CompareAndSwapUint32(&s.interrupted, 1, 0) {
-				if s.writeDelay < 1*time.Minute {
-					s.writeDelay *= 2
-				}
-			} else {
-				if s.writeDelay > 1*time.Microsecond {
-					s.writeDelay = s.writeDelay / 4 * 3
-				}
-			}
-			break
-		} else {
-			// this goroutine should write after the initiator completes
-
-			// First, wait for current writer to complete
-			s.writerDone.Wait()
-
-			// check if we've been in the write phase for too long - if so, let readers run again
-			// and retry the wait
-			now := time.Now().UnixNano()
-			if s.writeDeadline < now && s.pausedReaderCount > 0 {
-				// since writes are paused here, this goroutine becomes responsible to reinitiate the write phase
-				s.writing = false
-				atomic.StoreInt64(&s.readDeadline, time.Now().Add(s.writeDelay).UnixNano())
-				writeInitiator = true
-				s.endWrites.Broadcast()
-				continue
-			}
-			break
 		}
-	}
 
-	return s.completeWrite
-}
-
-func (s *Scheduler) execReadSlow() (done func()) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// While write phase is in progress, wait for completion
-	for s.writing {
-		s.endWrites.Wait()
-	}
-
-	// Writes are not active, but perhaps we need to pause due to the write deadline
-	now := time.Now().UnixNano()
-	for s.writerCount > 0 && s.readDeadline <= now {
-		s.pausedReaderCount++
-		readers := atomic.LoadInt32(&s.readerCount) + maxReaders - s.pausedReaderCount
-		if readers == 0 {
-			s.noReaders.Signal()
+		// prepare write phase
+		//
+		// execute until number of inflight requests is 0 OR interrupt timer expires
+		//
+		// on read request: allow request, increment inflight
+		// on complete: decrement inflight
+	prepareWrite:
+		for {
+			if inflight == 0 {
+				if !timer.Stop() {
+					<-timer.C
+				}
+				break prepareWrite
+			}
+			select {
+			case <-s.readRequests:
+				inflight++
+				s.readPermit <- void
+			case <-s.opComplete:
+				inflight--
+			case <-timer.C:
+				break prepareWrite
+			case <-done:
+				break scheduler
+			}
 		}
-		s.endWrites.Wait()
-		s.pausedReaderCount--
-		now = time.Now().UnixNano()
+
+		// wait reads done phase
+		//
+		// execute until number of inflight requests is 0
+		//
+		// on complete: decrement inflight
+		maxRuntime := time.Duration(-1)
+		interruptedRuntime := time.Duration(0)
+		interruptions := int64(0)
+		atomic.StoreUint32(&s.interrupt, 1)
+	waitReadsDone:
+		for {
+			if inflight == 0 {
+				break waitReadsDone
+			}
+			select {
+			case runtime := <-s.opComplete:
+				inflight--
+				if runtime > maxRuntime {
+					maxRuntime = runtime
+				}
+				if runtime > -1 {
+					interruptions++
+					interruptedRuntime += runtime
+				}
+			case <-done:
+				break scheduler
+			}
+		}
+		atomic.StoreUint32(&s.interrupt, 0)
+		if maxRuntime > writeDelay {
+			// If a scan took > 1/2 of the current write delay, before interruption
+			// extend write delay by doubling max runtime
+			writeDelay = maxRuntime * 2
+		} else if maxRuntime == -1 {
+			// If no scans interrupted, shrink writeDelay by 25%
+			writeDelay = writeDelay / 4 * 3
+		}
+
+		if writeDelay > 1*time.Minute {
+			writeDelay = 1 * time.Minute
+		} else if writeDelay < 1*time.Millisecond {
+			writeDelay = 1 * time.Millisecond
+		}
+
+		atomic.AddInt64(&s.stats.scanInterruptions, interruptions)
+		atomic.AddInt64(&s.stats.partialCompletionScanTime, interruptedRuntime.Nanoseconds())
+		atomic.StoreInt64(&s.stats.currentWriteDelay, writeDelay.Nanoseconds())
+		if writeDelay > maxWriteDelay {
+			maxWriteDelay = writeDelay
+			atomic.StoreInt64(&s.stats.maxWriteDelay, writeDelay.Nanoseconds())
+		}
+
+		// write phase
+		//
+		// execute until read request received
+		//
+		// on read request: set timer for interrupting writes
+		// on write request: allow request, wait for complete
+
+		// execute the write request that caused us to enter writePhase
+		s.writePermit <- void
+		<-s.opComplete
+	write:
+		for {
+			select {
+			case <-s.readRequests:
+				timer.Reset(maxReadDelay)
+				break write
+			case <-s.writeRequests:
+				s.writePermit <- void
+				<-s.opComplete
+			case <-done:
+				break scheduler
+			}
+		}
+
+		// prepare read phase
+		//
+		// execute until there are no enqueued write requests OR interrupt timer expires
+		//
+		// on write request (nonblocking): allow request, wait for complete
+		// on interrupt timer expires: set flag to interrupt executing reads
+	prepareRead:
+		for {
+			// check timer
+			select {
+			case <-timer.C:
+				break prepareRead
+			default:
+			}
+
+			select {
+			case <-s.writeRequests:
+				s.writePermit <- void
+				<-s.opComplete
+			default:
+				// no pending writes, exit this phase
+				if !timer.Stop() {
+					<-timer.C
+				}
+				break prepareRead
+			}
+		}
+
+		// start the pending read and repeat the loop
+		inflight++
+		s.readPermit <- void
 	}
 
-	return s.completeRead
-}
-
-func (s *Scheduler) completeRead() {
-	r := atomic.AddInt32(&s.readerCount, -1)
-	if r < 0 {
-		s.completeReadSlow()
-		return
+	for inflight > 0 {
+		<-s.opComplete
+		inflight--
 	}
 }
 
-func (s *Scheduler) completeReadSlow() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	readers := atomic.LoadInt32(&s.readerCount) + maxReaders - s.pausedReaderCount
-	if readers == 0 {
-		s.noReaders.Signal()
-	}
+func (s *Scheduler) writeDone() {
+	atomic.AddInt64(&s.stats.completedWrites, 1)
+	s.opDone()
 }
 
-func (s *Scheduler) completeWrite() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.writerCount--
-	if s.writerCount == 0 {
-		s.writing = false
-		atomic.AddInt32(&s.readerCount, maxReaders)
-		atomic.StoreInt64(&s.readDeadline, 0)
-		s.endWrites.Broadcast()
-	} else {
-		s.writerDone.Signal()
-	}
+func (s *Scheduler) readDone() {
+	atomic.AddInt64(&s.stats.completedReads, 1)
+	s.opDone()
 }
 
-func (s *Scheduler) notifyInterrupted() {
-	atomic.CompareAndSwapUint32(&s.interrupted, 0, 1)
+func (s *Scheduler) scanDone() {
+	atomic.AddInt64(&s.stats.completedScans, 1)
+	s.opDone()
+}
+
+func (s *Scheduler) opDone() {
+	s.opComplete <- -1
+}
+
+func (s *Scheduler) opInterrupted(runtime time.Duration) {
+	s.opComplete <- runtime
+	s.readRequests <- void
+	<-s.readPermit
+}
+
+type SchedulerStats struct {
+	// Current write delay period in seconds
+	currentWriteDelay int64
+
+	// Maximum write delay in this scheduler so far
+	maxWriteDelay int64
+
+	// Amount of time spent on scans that eventually had to be interrupted
+	partialCompletionScanTime int64
+
+	// Number of interruptions
+	scanInterruptions int64
+
+	// Current number of writes requested
+	requestedWrites int64
+
+	// Current number of reads requested
+	requestedReads int64
+
+	// Current number of scans requested
+	requestedScans int64
+
+	// Number of writes completed
+	completedWrites int64
+
+	// Number of reads completed
+	completedReads int64
+
+	// Number of scans completed
+	completedScans int64
+}
+
+func (ss *SchedulerStats) CurrentWriteDelay() float64 {
+	current := atomic.LoadInt64(&ss.currentWriteDelay)
+	return float64(current) / float64(time.Second)
+}
+
+func (ss *SchedulerStats) MaxWriteDelay() float64 {
+	current := atomic.LoadInt64(&ss.maxWriteDelay)
+	return float64(current) / float64(time.Second)
+}
+
+func (ss *SchedulerStats) PartialCompletionScanTime() float64 {
+	current := atomic.LoadInt64(&ss.partialCompletionScanTime)
+	return float64(current) / float64(time.Second)
+}
+
+func (ss *SchedulerStats) ScanInterruptions() float64 {
+	current := atomic.LoadInt64(&ss.scanInterruptions)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) RequestedWrites() float64 {
+	current := atomic.LoadInt64(&ss.requestedWrites)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) RequestedReads() float64 {
+	current := atomic.LoadInt64(&ss.requestedReads)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) RequestedScans() float64 {
+	current := atomic.LoadInt64(&ss.requestedScans)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) CompletedWrites() float64 {
+	current := atomic.LoadInt64(&ss.completedWrites)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) CompletedReads() float64 {
+	current := atomic.LoadInt64(&ss.completedReads)
+	return float64(current)
+}
+
+func (ss *SchedulerStats) CompletedScans() float64 {
+	current := atomic.LoadInt64(&ss.completedScans)
+	return float64(current)
 }

@@ -79,6 +79,7 @@ type Server struct {
 	epc          *endpoint.Manager
 	snapshotMeta *SnapshotMeta
 	scheduler    *txn.Scheduler
+	endScheduler func()
 
 	// env opts
 	geomParseOpts geojson.ParseOptions
@@ -137,9 +138,9 @@ type Server struct {
 }
 
 // Serve starts a new tile38 server
-func Serve(host string, port int, dir string, http bool, maxWriteDelay, maxReadDelay time.Duration) error {
+func Serve(host string, port int, dir string, http bool, initialWriteDelay, maxReadDelay time.Duration) error {
 	// Initialize the server
-	server, err := NewServer(host, port, dir, http, maxWriteDelay, maxReadDelay)
+	server, err := NewServer(host, port, dir, http, initialWriteDelay, maxReadDelay)
 	if err != nil {
 		return err
 	}
@@ -147,7 +148,7 @@ func Serve(host string, port int, dir string, http bool, maxWriteDelay, maxReadD
 	return server.Serve()
 }
 
-func NewServer(host string, port int, dir string, http bool, maxWriteDelay, maxReadDelay time.Duration) (*Server, error) {
+func NewServer(host string, port int, dir string, http bool, initialWriteDelay, maxReadDelay time.Duration) (*Server, error) {
 	if core.AppendFileName == "" {
 		core.AppendFileName = path.Join(dir, "appendonly.aof")
 	}
@@ -155,24 +156,27 @@ func NewServer(host string, port int, dir string, http bool, maxWriteDelay, maxR
 		core.QueueFileName = path.Join(dir, "queue.db")
 	}
 
+	sched, endSched := txn.NewScheduler(initialWriteDelay, maxReadDelay)
+
 	// Initialize the server
 	server := &Server{
-		host:      host,
-		port:      port,
-		dir:       dir,
-		scheduler: txn.NewScheduler(maxWriteDelay, maxReadDelay),
-		follows:   make(map[*bytes.Buffer]bool),
-		fcond:     sync.NewCond(&sync.Mutex{}),
-		lives:     make(map[*liveBuffer]bool),
-		lcond:     sync.NewCond(&sync.Mutex{}),
-		hooks:     make(map[string]*Hook),
-		hooksOut:  make(map[string]*Hook),
-		aofconnM:  make(map[net.Conn]bool),
-		expires:   rhh.New(0),
-		started:   time.Now(),
-		conns:     make(map[int]*Client),
-		http:      http,
-		pubsub:    newPubsub(),
+		host:         host,
+		port:         port,
+		dir:          dir,
+		scheduler:    sched,
+		endScheduler: endSched,
+		follows:      make(map[*bytes.Buffer]bool),
+		fcond:        sync.NewCond(&sync.Mutex{}),
+		lives:        make(map[*liveBuffer]bool),
+		lcond:        sync.NewCond(&sync.Mutex{}),
+		hooks:        make(map[string]*Hook),
+		hooksOut:     make(map[string]*Hook),
+		aofconnM:     make(map[net.Conn]bool),
+		expires:      rhh.New(0),
+		started:      time.Now(),
+		conns:        make(map[int]*Client),
+		http:         http,
+		pubsub:       newPubsub(),
 	}
 
 	server.hookex.Expired = func(item expire.Item) {
@@ -291,6 +295,7 @@ func (server *Server) Serve() error {
 	log.Infof("Server started, Tile38 version %s, git %s", core.Version, core.GitSHA)
 
 	defer server.luapool.Shutdown()
+	defer server.endScheduler()
 
 	// Only load AOF if we're not following anybody.
 	// Following means scrapping what you have

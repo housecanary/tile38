@@ -171,7 +171,7 @@ func (pl *lStatePool) new() *lua.LState {
 		return 1
 	}
 
-	baseIterate := func(ls *lua.LState, pcall bool) (string, error) {
+	baseIterate := func(ls *lua.LState) (string, error) {
 		evalCmd := ls.GetGlobal("EVAL_CMD").String()
 		ts := ls.GetGlobal("TXN_STATUS").(*lua.LUserData).Value.(*txn.Status)
 		callback := ls.ToFunction(1)
@@ -192,6 +192,20 @@ func (pl *lStatePool) new() *lua.LState {
 			}
 		}
 
+		if cmd == "timeout" && len(vs) > 1 {
+			timeoutSec, err := strconv.ParseFloat(vs[0], 64)
+			if err != nil || timeoutSec < 0 {
+				return "", errInvalidArgument(vs[0])
+			}
+			cmd = vs[1]
+			vs = vs[2:]
+			timeoutDl := time.Now().Add(time.Duration(timeoutSec * float64(time.Second)))
+			if dl.IsZero() || timeoutDl.Before(dl) {
+				dl = timeoutDl
+				ts = ts.WithDeadline(timeoutDl)
+			}
+		}
+
 		itr := ls.NewUserData()
 		itr.Value = &luaScanIterator{
 			gomt: ls.GetTypeMetatable(luaGeoJSONObjectTypeName),
@@ -204,11 +218,11 @@ func (pl *lStatePool) new() *lua.LState {
 			itr: itr,
 		}
 
-		err := pl.s.luaTile38Iterate(coll, ts, dl, pcall, evalCmd, strings.ToLower(cmd), vs)
+		err := pl.s.luaTile38Iterate(coll, ts, dl, evalCmd, strings.ToLower(cmd), vs)
 		return strconv.FormatUint(coll.cursor, 10), err
 	}
 	iterate := func(ls *lua.LState) int {
-		cursor, err := baseIterate(ls, false)
+		cursor, err := baseIterate(ls)
 		if err != nil {
 			if errors.Is(err, txn.DeadlineError{}) { // Must panic here to preserve error type
 				panic(err)
@@ -219,7 +233,7 @@ func (pl *lStatePool) new() *lua.LState {
 		return 1
 	}
 	piterate := func(ls *lua.LState) int {
-		cursor, err := baseIterate(ls, true)
+		cursor, err := baseIterate(ls)
 		if err != nil {
 			ls.Push(lua.LFalse)
 			ls.Push(lua.LString(err.Error()))
@@ -261,6 +275,21 @@ func (pl *lStatePool) new() *lua.LState {
 		ls.Push(result)
 		return 1
 	}
+
+	parseGeoJSON := func(ls *lua.LState) int {
+		data := ls.ToString(1)
+		obj, err := geojson.Parse(data, &pl.s.geomParseOpts)
+		if err != nil {
+			ls.RaiseError("%v", err)
+		}
+		gomt := ls.GetTypeMetatable(luaGeoJSONObjectTypeName)
+		gobj := ls.NewUserData()
+		gobj.Metatable = gomt
+		gobj.Value = obj
+		ls.Push(gobj)
+		return 1
+	}
+
 	var exports = map[string]lua.LGFunction{
 		"call":            call,
 		"pcall":           pcall,
@@ -273,6 +302,7 @@ func (pl *lStatePool) new() *lua.LState {
 		"field_indexes":   fieldIndexes,
 		"get":             getObject,
 		"new_stats_array": makeStatsArray,
+		"parse_geojson":   parseGeoJSON,
 	}
 	L.SetGlobal("tile38", L.SetFuncs(L.NewTable(), exports))
 
@@ -935,7 +965,7 @@ func (s *Server) luaTile38NonAtomic(msg *Message, deadline time.Time) (resp.Valu
 	return res, nil
 }
 
-func (s *Server) luaTile38Iterate(coll *luaScanCollector, ts *txn.Status, deadline time.Time, pcall bool, evalcmd, cmd string, vs []string) error {
+func (s *Server) luaTile38Iterate(coll *luaScanCollector, ts *txn.Status, deadline time.Time, evalcmd, cmd string, vs []string) error {
 	// Acquire a lock if we don't already have one
 	switch evalcmd {
 	case "evalna", "evalnasha":
@@ -953,15 +983,11 @@ func (s *Server) luaTile38Iterate(coll *luaScanCollector, ts *txn.Status, deadli
 	skipScan := uint64(0)
 	skipMatch := uint64(0)
 	for {
-		scanStart, scanEnd, matchCount, err := s.luaTile38IterateInner(coll, ts, evalcmd, cmd, vs, skipScan, skipMatch)
+		scanStart, scanEnd, matchCount, noresume, err := s.luaTile38IterateInner(coll, ts, evalcmd, cmd, vs, skipScan, skipMatch)
 		skipMatch += matchCount
 		skipScan += scanEnd - scanStart
 
-		if pcall { // pcall always returns the error to let the script process it
-			return err
-		}
-
-		if errors.Is(err, txn.InterruptedError{}) { // if not a pcall, retry if was interrupted
+		if !noresume && errors.Is(err, txn.InterruptedError{}) { // retry if was interrupted
 			ts.Retry()
 			continue
 		}
@@ -971,9 +997,10 @@ func (s *Server) luaTile38Iterate(coll *luaScanCollector, ts *txn.Status, deadli
 	}
 }
 
-func (s *Server) luaTile38IterateInner(coll *luaScanCollector, ts *txn.Status, evalcmd, cmd string, vs []string, skipScan, skipMatch uint64) (scanStart, scanEnd, matchCount uint64, err error) {
+func (s *Server) luaTile38IterateInner(coll *luaScanCollector, ts *txn.Status, evalcmd, cmd string, vs []string, skipScan, skipMatch uint64) (scanStart, scanEnd, matchCount uint64, noresume bool, err error) {
 	// Parse the command args
 	var lfs liveFenceSwitches
+
 	switch cmd {
 	case "nearby":
 		lfs, err = s.cmdSearchArgs(false, cmd, vs, nearbyTypes)
@@ -990,6 +1017,8 @@ func (s *Server) luaTile38IterateInner(coll *luaScanCollector, ts *txn.Status, e
 	if err != nil {
 		return
 	}
+
+	noresume = lfs.noresume
 
 	// Ensure we clean up lfs if needed
 	if lfs.usingLua() {
@@ -1021,7 +1050,7 @@ func (s *Server) luaTile38IterateInner(coll *luaScanCollector, ts *txn.Status, e
 
 	// If collection doesn't exist, just return
 	if sc.col == nil {
-		return 0, 0, 0, nil
+		return 0, 0, 0, false, nil
 	}
 
 	// Handle any errors that occur during processing, and track position

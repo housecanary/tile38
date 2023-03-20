@@ -10,8 +10,14 @@ const errCodeMask = int64(0x3)
 const signalInterruptedMask = int64(0x4)
 
 type Status struct {
-	s      *Scheduler
-	status int64
+	status     int64
+	scanStatus *scanStatus
+}
+
+type scanStatus struct {
+	startTime   int64
+	interrupted *uint32
+	onRetry     func(elapsed time.Duration)
 }
 
 func (ts *Status) IsAborted() bool {
@@ -58,20 +64,15 @@ func (ts *Status) WithDeadline(t time.Time) *Status {
 	}
 
 	return &Status{
-		s:      ts.s,
-		status: (t.UnixNano() & deadlineMask) | (ts.status & ^deadlineMask),
+		scanStatus: ts.scanStatus,
+		status:     (t.UnixNano() & deadlineMask) | (ts.status & ^deadlineMask),
 	}
 }
 
 func (ts *Status) Retry() {
-	// Release the current lock
-	ts.s.completeRead()
-
-	// clear error
+	ts.scanStatus.onRetry(time.Since(time.Unix(0, ts.scanStatus.startTime)))
 	ts.status = ts.status & ^errCodeMask
-
-	// Reacquire reader lock
-	ts.s.Read()
+	ts.scanStatus.startTime = time.Now().UnixNano()
 }
 
 func (ts *Status) updateIfNeeded() {
@@ -91,18 +92,10 @@ func (ts *Status) updateIfNeeded() {
 		}
 	}
 
-	if ts.s != nil {
+	if ts.scanStatus != nil {
 		// Check if we are interrupted
-		readDeadline := atomic.LoadInt64(&ts.s.readDeadline)
-		if readDeadline != 0 && now >= readDeadline {
-			if ts.status&signalInterruptedMask != 0 {
-				// Note: the first time we are interrupted we do not call
-				// notify interrupted. This is because we could have been scheduled
-				// slightly before the deadline and then been interrupted, hence
-				// we don't want to adjust the scheduler's stats until we've been
-				// granted a full timeslice.
-				ts.s.notifyInterrupted()
-			}
+		interrupted := atomic.LoadUint32(ts.scanStatus.interrupted)
+		if interrupted == 1 {
 			ts.status = deadline | int64(errCodeInterrupted) | signalInterruptedMask
 			return
 		}
