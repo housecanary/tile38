@@ -6,7 +6,7 @@ require (
 	github.com/Shopify/sarama v1.13.0
 	github.com/aws/aws-sdk-go v1.44.112
 	github.com/eclipse/paho.mqtt.golang v1.1.0
-	github.com/golang/protobuf v1.5.2
+	github.com/golang/protobuf v1.5.3
 	github.com/gomodule/redigo v2.0.1-0.20181026001555-e8fc0692a7e2+incompatible
 	github.com/mmcloughlin/geohash v0.0.0-20181009053802-f7f2bcae3294
 	github.com/nats-io/go-nats v1.6.0
@@ -29,7 +29,7 @@ require (
 	github.com/yuin/gopher-lua v0.0.0-20170915035107-eb1c7299435c
 	golang.org/x/crypto v0.14.0
 	golang.org/x/net v0.17.0
-	google.golang.org/grpc v1.31.0
+	google.golang.org/grpc v1.56.3
 	layeh.com/gopher-json v0.0.0-20161224164157-c128cc74278b
 )
 
@@ -37,7 +37,7 @@ require (
 	github.com/Shopify/toxiproxy v2.1.4+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/eapache/go-resiliency v1.0.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934 // indirect
@@ -62,8 +62,8 @@ require (
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
-	google.golang.org/genproto v0.0.0-20200825200019-8632dd797987 // indirect
-	google.golang.org/protobuf v1.26.0 // indirect
+	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
+	google.golang.org/protobuf v1.30.0 // indirect
 )
 
 replace github.com/tidwall/geoindex => github.com/housecanary/geoindex v1.4.0-snapshot
