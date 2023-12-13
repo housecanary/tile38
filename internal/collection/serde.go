@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -361,18 +360,19 @@ func loadFieldValues(f *os.File) (fv *fieldValues, err error) {
 		log.Errorf("Failed to nCols from fields file")
 		return
 	}
-	byteData := make([]byte, 8*nRows*nCols)
-	if _, err = io.ReadFull(f, byteData); err != nil {
-		log.Errorf("Failed to read fields data from fields file")
-		return
-	}
 
 	fv = &fieldValues{
 		freelist: bytesAsFreeList(byteFreeList),
 		data:     make([][]float64, nRows),
 	}
+	reader := bufio.NewReader(io.LimitReader(f, int64(8*nRows*nCols)))
 	for i := uint64(0); i < nRows; i++ {
-		fv.data[i] = bytesAsFloats(byteData[i*8*nCols : (i+1)*8*nCols])
+		byteData := make([]byte, nCols*8)
+		if _, err = io.ReadFull(reader, byteData); err != nil {
+			log.Errorf("Failed to read fields data from fields file")
+			return
+		}
+		fv.data[i] = bytesAsFloats(byteData)
 	}
 	return
 }
@@ -774,12 +774,7 @@ func (c *Collection) loadIndexTree(treeFile string, itemList []*itemT, snapshotI
 
 // Helper functions
 func stringAsBytes(s string) []byte {
-	var b []byte
-	bHdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	bHdr.Data = uintptr(unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&s)).Data))
-	bHdr.Len = len(s)
-	bHdr.Cap = len(s)
-	return b
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 func saveString(w io.Writer, s string) (err error) {
@@ -813,34 +808,28 @@ func loadString(r io.Reader, buf []byte) (s string, newBuf []byte, err error) {
 	return string(newBuf), newBuf, nil
 }
 
+const (
+	fvsSize = int(unsafe.Sizeof(fieldValuesSlot(0)))
+)
+
 func freeListAsBytes(row []fieldValuesSlot) []byte {
-	fvsSize := int(unsafe.Sizeof(fieldValuesSlot(0)))
-	header := (*reflect.SliceHeader)(unsafe.Pointer(&row))
-	header.Len *= fvsSize
-	header.Cap *= fvsSize
-	return *(*[]byte)(unsafe.Pointer(&row))
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(row))), len(row)*fvsSize)
 }
 
 func bytesAsFreeList(row []byte) []fieldValuesSlot {
-	fvsSize := int(unsafe.Sizeof(fieldValuesSlot(0)))
-	header := (*reflect.SliceHeader)(unsafe.Pointer(&row))
-	header.Len /= fvsSize
-	header.Cap /= fvsSize
-	return *(*[]fieldValuesSlot)(unsafe.Pointer(&row))
+	return unsafe.Slice((*fieldValuesSlot)(unsafe.Pointer(unsafe.SliceData(row))), len(row)/fvsSize)
 }
 
+const (
+	float64Size = 8
+)
+
 func floatsAsBytes(row []float64) []byte {
-	header := (*reflect.SliceHeader)(unsafe.Pointer(&row))
-	header.Len *= 8
-	header.Cap *= 8
-	return *(*[]byte)(unsafe.Pointer(&row))
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(row))), len(row)*float64Size)
 }
 
 func bytesAsFloats(row []byte) []float64 {
-	header := (*reflect.SliceHeader)(unsafe.Pointer(&row))
-	header.Len /= 8
-	header.Cap /= 8
-	return *(*[]float64)(unsafe.Pointer(&row))
+	return unsafe.Slice((*float64)(unsafe.Pointer(unsafe.SliceData(row))), len(row)/float64Size)
 }
 
 func verifySnapshotId(w io.Reader, snapshotId uint64) (err error) {
