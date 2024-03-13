@@ -162,6 +162,15 @@ func (pl *lStatePool) new() *lua.LState {
 		return 1
 	}
 
+	cdf := func(ls *lua.LState) int {
+		dt := CDFOf(
+			float64(ls.ToNumber(1)),
+			float64(ls.ToNumber(2)),
+			float64(ls.ToNumber(3)))
+		ls.Push(lua.LNumber(dt))
+		return 1
+	}
+
 	makeStatsArray := func(ls *lua.LState) int {
 		mt := ls.GetTypeMetatable(luaStatsArrayTypeName)
 		ud := ls.NewUserData()
@@ -297,6 +306,7 @@ func (pl *lStatePool) new() *lua.LState {
 		"status_reply":    statusReply,
 		"sha1hex":         sha1hex,
 		"distance_to":     distanceTo,
+		"cdf":             cdf,
 		"iterate":         iterate,
 		"piterate":        piterate,
 		"field_indexes":   fieldIndexes,

@@ -13,6 +13,7 @@ func subTestScripts(t *testing.T, mc *mockServer) {
 	runStep(t, mc, "NONATOMIC", scripts_NONATOMIC_test)
 	runStep(t, mc, "ITERATE", scripts_ITERATE_test)
 	runStep(t, mc, "STATS", scripts_STATSARRAY_test)
+	runStep(t, mc, "CDF", scripts_CDF_test)
 	runStep(t, mc, "GEOJSON", scripts_GEOJSON_test)
 }
 
@@ -146,6 +147,21 @@ func scripts_ITERATE_test(mc *mockServer) error {
 		{"EVAL", script_obj, 0}, {"[0 [" + poly9 + "]]"}, // no early stop, cursor = 0
 		{"EVAL", script_fields, 0}, {"[1 [[1 10]]]"}, // early stop, cursor = 1
 		{"EVAL", script_nearby_ids, 0}, {"[1 [poly10]]"}, // early stop, cursor = 1
+	})
+
+}
+
+func scripts_CDF_test(mc *mockServer) error {
+	script_cdf := `
+	local cdf = tile38.cdf
+	return {
+		cdf(-3, -3, 0.8) * 100,
+		cdf(-2, -3, 0.8) * 100
+	}
+	`
+
+	return mc.DoBatch([][]interface{}{
+		{"EVAL", script_cdf, 0}, {"[50 89]"},
 	})
 
 }

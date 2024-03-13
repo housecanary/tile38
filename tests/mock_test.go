@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -266,27 +265,28 @@ func (mc *mockServer) DoExpect(expect interface{}, commandName string, args ...i
 	}
 	return nil
 }
-func round(v float64, decimals int) float64 {
-	var pow float64 = 1
-	for i := 0; i < decimals; i++ {
-		pow *= 10
-	}
-	return float64(int((v*pow)+0.5)) / pow
-}
 
-func exfloat(v float64, decimals int) func(v interface{}) (resp, expect interface{}) {
-	ex := round(v, decimals)
-	return func(v interface{}) (resp, expect interface{}) {
-		var s string
-		if b, ok := v.([]uint8); ok {
-			s = string(b)
-		} else {
-			s = fmt.Sprintf("%v", v)
-		}
-		n, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return v, ex
-		}
-		return round(n, decimals), ex
-	}
-}
+// func round(v float64, decimals int) float64 {
+// 	var pow float64 = 1
+// 	for i := 0; i < decimals; i++ {
+// 		pow *= 10
+// 	}
+// 	return float64(int((v*pow)+0.5)) / pow
+// }
+
+// func exfloat(v float64, decimals int) func(v interface{}) (resp, expect interface{}) {
+// 	ex := round(v, decimals)
+// 	return func(v interface{}) (resp, expect interface{}) {
+// 		var s string
+// 		if b, ok := v.([]uint8); ok {
+// 			s = string(b)
+// 		} else {
+// 			s = fmt.Sprintf("%v", v)
+// 		}
+// 		n, err := strconv.ParseFloat(s, 64)
+// 		if err != nil {
+// 			return v, ex
+// 		}
+// 		return round(n, decimals), ex
+// 	}
+// }
