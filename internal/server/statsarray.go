@@ -18,6 +18,17 @@ type summary struct {
 	max               float64
 }
 
+func CDFOf(x, mean, standardDeviation float64) float64 {
+	μ, σ := mean, standardDeviation
+
+	if σ <= 0 {
+		return 0
+	} else {
+		return 0.5 * (1 + math.Erf((x-μ)/(σ*math.Sqrt2)))
+		// return 0.5 * math.Erfc(-(x-μ)/(σ*math.Sqrt2))
+	}
+}
+
 func (a *statsArray) Copy() *statsArray {
 	result := statsArray{
 		xs:      make([]float64, len(a.xs)),

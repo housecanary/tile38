@@ -1,5 +1,8 @@
 package tests
 
+// NOTE - when floats cross RESP boundaries, they are converted to integers and are rounded
+// pass as str or scale up to prevent loss of precision
+
 import (
 	"fmt"
 	"math/rand"
