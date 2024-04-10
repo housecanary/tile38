@@ -108,7 +108,7 @@ func (server *Server) goLive(
 	ul := server.ReaderLock()
 	sc, err = server.newScanner(
 		coll, s.key, s.output, s.precision, s.glob, false,
-		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
+		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, nil, s.nofields)
 	ul()
 
 	// everything below if for live SCAN, NEARBY, WITHIN, INTERSECTS
