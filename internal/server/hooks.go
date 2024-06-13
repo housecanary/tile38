@@ -155,6 +155,7 @@ func (s *Server) cmdSetHook(msg *Message, chanCmd bool) (
 	hook.Scanner, err = s.newScanner(
 		coll, args.key, args.output, args.precision, args.glob, false,
 		args.cursor, args.limit, args.wheres, args.whereins, args.whereevals,
+		nil,
 		args.nofields)
 	if err != nil {
 

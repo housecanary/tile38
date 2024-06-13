@@ -28,6 +28,8 @@ func subTestSearch(t *testing.T, mc *mockServer) {
 }
 
 func keys_KNN_test(mc *mockServer) error {
+	poly1 := `{"type": "Polygon","coordinates": [[[4,4],[5.5,4],[5.5,5.5],[4,5.5],[4,4]]]}`
+
 	return mc.DoBatch([][]interface{}{
 		{"SET", "mykey", "1", "POINT", 5, 5}, {"OK"},
 		{"SET", "mykey", "2", "POINT", 19, 19}, {"OK"},
@@ -38,6 +40,8 @@ func keys_KNN_test(mc *mockServer) error {
 			"[0 [[2 [19 19]] [3 [12 19]] [5 [33 21]] [1 [5 5]] [4 [-5 5]]]]"},
 		{"NEARBY", "mykey", "LIMIT", 10, "IDS", "POINT", 20, 20, 4000000}, {"[0 [2 3 5 1 4]]"},
 		{"NEARBY", "mykey", "LIMIT", 10, "IDS", "POINT", 20, 20, 1500000}, {"[0 [2 3 5]]"},
+		{"NEARBY", "mykey", "LIMIT", 10, "POINTS", "POINT", 20, 20, "CLIPBY", "OBJECT", poly1}, {"[0 [[1 [5 5]]]]"},
+		{"NEARBY", "mykey", "LIMIT", 10, "POINTS", "POINT", 20, 20, 10, "CLIPBY", "OBJECT", poly1}, {"[0 []]"},
 	})
 }
 

@@ -1052,7 +1052,7 @@ func (s *Server) luaTile38IterateInner(coll *luaScanCollector, ts *txn.Status, e
 
 	sc, err := s.newScanner(
 		coll, lfs.key, lfs.output, lfs.precision, lfs.glob, cmd == "search",
-		lfs.cursor, lfs.limit, lfs.wheres, lfs.whereins, lfs.whereevals, lfs.nofields)
+		lfs.cursor, lfs.limit, lfs.wheres, lfs.whereins, lfs.whereevals, lfs.clipby, lfs.nofields)
 
 	if err != nil {
 		return
