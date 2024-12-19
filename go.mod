@@ -28,7 +28,7 @@ require (
 	github.com/tidwall/tinybtree v0.0.0-20181217131827-de5932d649b5
 	github.com/yuin/gopher-lua v0.0.0-20170915035107-eb1c7299435c
 	golang.org/x/crypto v0.31.0
-	golang.org/x/net v0.24.0
+	golang.org/x/net v0.33.0
 	google.golang.org/grpc v1.56.3
 	layeh.com/gopher-json v0.0.0-20161224164157-c128cc74278b
 )
