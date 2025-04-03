@@ -229,25 +229,48 @@ func (s *Server) cmdLoadSnapshot(msg *Message) (res resp.Value, err error) {
 }
 
 func (s *Server) fetchSnapshot(snapshotIdStr string) (snapshotDir string, err error) {
+	// check if the snapshot is already loaded, then we don't need to pull it
+	// if it is not loaded, we will pull it into temporary transfer location
+	// and then rename it to the final location after it is successfully pulled
+
 	snapshotDir = s.getSnapshotDir(snapshotIdStr)
-	if _, err = os.Stat(snapshotDir); os.IsNotExist(err) {
-		if err = os.MkdirAll(snapshotDir, 0700); err != nil {
-			log.Errorf("Failed to create snapshot dir: %v", err)
-			return
-		}
-		log.Infof("Pulling snapshot %s... (not found locally)", snapshotIdStr)
-		// Deployment must make pull_snapshot script available on the system.
-		// The script must take two argument: ID string and the destination dir.
-		// The script must be able to wait for snapshot to become fully ready in s3.
-		cmd := exec.Command("pull_snapshot", snapshotIdStr, snapshotDir)
-		if err = cmd.Run(); err != nil {
-			log.Errorf("Failed to pull snapshot: %v", err)
-			return
-		}
-		log.Infof("Pulled snapshot %s", snapshotIdStr)
-	} else {
+	if _, err = os.Stat(snapshotDir); err == nil {
 		log.Infof("Found %s locally, not pulling.", snapshotIdStr)
+		return snapshotDir, nil
 	}
+
+	// we will transfer into staging folder first before renaming to permanent location
+	snapshotTransferDir := snapshotDir + ".transfer"
+	if _, err = os.Stat(snapshotTransferDir); err == nil {
+		if err = os.RemoveAll(snapshotTransferDir); err != nil {
+			log.Infof("Failed to remove dir %s: %v", snapshotTransferDir, err)
+			return
+		}
+	}
+
+	if err = os.MkdirAll(snapshotTransferDir, 0700); err != nil {
+		log.Errorf("Failed to create snapshot transfer dir: %v", err)
+		return
+	}
+
+	log.Infof("Staging snapshot %s... (not found locally)", snapshotIdStr)
+	// Deployment must make pull_snapshot script available on the system.
+	// The script must take two argument: ID string and the destination dir.
+	// The script must be able to wait for snapshot to become fully ready in s3.
+	cmd := exec.Command("pull_snapshot", snapshotIdStr, snapshotTransferDir)
+	if err = cmd.Run(); err != nil {
+		log.Errorf("Failed to pull snapshot: %v", err)
+		return
+	}
+	log.Infof("Staged snapshot %s", snapshotIdStr)
+
+	if err = os.Rename(snapshotTransferDir, snapshotDir); err != nil {
+		log.Errorf("Failed to rename snapshot dir: %v", err)
+		return
+	}
+
+	log.Infof("Pulled snapshot %s", snapshotIdStr)
+
 	go s.cleanUpSnapshots()
 	return
 }
@@ -329,4 +352,3 @@ func (s *Server) doLoadSnapshot(snapshotIdStr string) error {
 	log.Infof("Loaded snapshot %s", snapshotIdStr)
 	return nil
 }
-
