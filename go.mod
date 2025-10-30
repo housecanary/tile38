@@ -1,8 +1,6 @@
 module github.com/tidwall/tile38
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.25
 
 require (
 	github.com/Shopify/sarama v1.13.0
