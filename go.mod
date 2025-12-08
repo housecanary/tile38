@@ -5,7 +5,7 @@ go 1.25
 require (
 	github.com/Shopify/sarama v1.13.0
 	github.com/aws/aws-sdk-go v1.44.112
-	github.com/eclipse/paho.mqtt.golang v1.1.0
+	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/golang/protobuf v1.5.3
 	github.com/gomodule/redigo v2.0.1-0.20181026001555-e8fc0692a7e2+incompatible
 	github.com/mmcloughlin/geohash v0.0.0-20181009053802-f7f2bcae3294
@@ -43,6 +43,7 @@ require (
 	github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934 // indirect
 	github.com/eapache/queue v1.0.2 // indirect
 	github.com/golang/snappy v0.0.0-20170215233205-553a64147049 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/nats-io/gnatsd v1.4.1 // indirect
@@ -59,6 +60,7 @@ require (
 	github.com/tidwall/rbang v1.2.2 // indirect
 	github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e // indirect
 	github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563 // indirect
+	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
