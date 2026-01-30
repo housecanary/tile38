@@ -38,6 +38,16 @@ var errCatchingUp = errors.New("catching up to leader")
 var errNoLuasAvailable = errors.New("no interpreters available")
 var errTimeout = errors.New("timeout")
 
+func getTransactionStatus(ls *lua.LState) *txn.Status {
+	txnStatus := ls.GetGlobal("TXN_STATUS")
+	switch txnStatus.Type() {
+	case lua.LTNil:
+		return &txn.Status{}
+	default:
+		return txnStatus.(*lua.LUserData).Value.(*txn.Status)
+	}
+}
+
 // Go-routine-safe pool of read-to-go lua states
 type lStatePool struct {
 	m     sync.Mutex
@@ -113,7 +123,8 @@ func (pl *lStatePool) new() *lua.LState {
 	}
 	call := func(ls *lua.LState) int {
 		evalCmd, args := getArgs(ls)
-		ts := ls.GetGlobal("TXN_STATUS").(*lua.LUserData).Value.(*txn.Status)
+		ts := getTransactionStatus(ls)
+
 		var numRet int
 		if res, err := pl.s.luaTile38Call(evalCmd, ts, args[0], args[1:]...); err != nil {
 			ls.RaiseError("ERR %s", err.Error())
@@ -126,7 +137,7 @@ func (pl *lStatePool) new() *lua.LState {
 	}
 	pcall := func(ls *lua.LState) int {
 		evalCmd, args := getArgs(ls)
-		ts := ls.GetGlobal("TXN_STATUS").(*lua.LUserData).Value.(*txn.Status)
+		ts := getTransactionStatus(ls)
 		if res, err := pl.s.luaTile38Call(evalCmd, ts, args[0], args[1:]...); err != nil {
 			ls.Push(ConvertToLua(ls, resp.ErrorValue(err)))
 		} else {
