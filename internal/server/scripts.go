@@ -42,7 +42,7 @@ func getTransactionStatus(ls *lua.LState) *txn.Status {
 	txnStatus := ls.GetGlobal("TXN_STATUS")
 	switch txnStatus.Type() {
 	case lua.LTNil:
-		return &txn.Status{}
+		return nil
 	default:
 		return txnStatus.(*lua.LUserData).Value.(*txn.Status)
 	}
