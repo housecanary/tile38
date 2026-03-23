@@ -6,7 +6,7 @@ require (
 	github.com/Shopify/sarama v1.13.0
 	github.com/aws/aws-sdk-go v1.44.112
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/golang/protobuf v1.5.3
+	github.com/golang/protobuf v1.5.4
 	github.com/gomodule/redigo v2.0.1-0.20181026001555-e8fc0692a7e2+incompatible
 	github.com/mmcloughlin/geohash v0.0.0-20181009053802-f7f2bcae3294
 	github.com/nats-io/go-nats v1.6.0
@@ -27,9 +27,9 @@ require (
 	github.com/tidwall/sjson v1.1.1
 	github.com/tidwall/tinybtree v0.0.0-20181217131827-de5932d649b5
 	github.com/yuin/gopher-lua v0.0.0-20170915035107-eb1c7299435c
-	golang.org/x/crypto v0.45.0
-	golang.org/x/net v0.47.0
-	google.golang.org/grpc v1.56.3
+	golang.org/x/crypto v0.46.0
+	golang.org/x/net v0.48.0
+	google.golang.org/grpc v1.79.3
 	layeh.com/gopher-json v0.0.0-20161224164157-c128cc74278b
 )
 
@@ -37,7 +37,7 @@ require (
 	github.com/Shopify/toxiproxy v2.1.4+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
-	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/eapache/go-resiliency v1.0.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934 // indirect
@@ -60,12 +60,12 @@ require (
 	github.com/tidwall/rbang v1.2.2 // indirect
 	github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e // indirect
 	github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563 // indirect
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/term v0.37.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
 )
 
 replace github.com/tidwall/geoindex => github.com/housecanary/geoindex v1.4.0-snapshot
