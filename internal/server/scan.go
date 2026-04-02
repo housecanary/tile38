@@ -49,6 +49,7 @@ func (s *Server) cmdScan(msg *Message, ts *txn.Status) (res resp.Value, err erro
 	sc, err := s.newScanner(
 		newScanCollector(msg, wr, &respOut), args.key, args.output, args.precision, args.glob, false,
 		args.cursor, args.limit, args.wheres, args.whereins, args.whereevals,
+		args.clipby,
 		args.nofields)
 	if err != nil {
 		return NOMessage, err

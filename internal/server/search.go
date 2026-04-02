@@ -20,6 +20,7 @@ const defaultCircleSteps = 64
 type liveFenceSwitches struct {
 	searchScanBaseTokens
 	obj    geojson.Object
+	clipby geojson.Object
 	cmd    string
 	roam   roamSwitches
 	groups map[string]string
@@ -239,17 +240,19 @@ func (server *Server) cmdSearchArgs(
 		}
 		// radius is optional for nearby, but mandatory for others
 		if cmd == "nearby" {
-			if vs, smeters, ok = tokenval(vs); ok && smeters != "" {
-				if meters, err = strconv.ParseFloat(smeters, 64); err != nil {
-					err = errInvalidArgument(smeters)
-					return
+			meters = -1
+
+			if len(vs) > 0 && strings.ToLower(vs[0]) != "clipby" {
+				if vs, smeters, ok = tokenval(vs); ok && smeters != "" {
+					if meters, err = strconv.ParseFloat(smeters, 64); err != nil {
+						err = errInvalidArgument(smeters)
+						return
+					}
+					if meters < 0 {
+						err = errInvalidArgument(smeters)
+						return
+					}
 				}
-				if meters < 0 {
-					err = errInvalidArgument(smeters)
-					return
-				}
-			} else {
-				meters = -1
 			}
 		} else {
 			if vs, smeters, ok = tokenval(vs); !ok || smeters == "" {
@@ -369,6 +372,16 @@ func (server *Server) cmdSearchArgs(
 				return
 			}
 			s.obj = geojson.Clip(s.obj, clip_rect, &server.geomIndexOpts)
+		case "object":
+			var obj string
+			if vs, obj, ok = tokenval(vs); !ok || obj == "" {
+				err = errInvalidNumberOfArguments
+				return
+			}
+			s.clipby, err = geojson.Parse(obj, &server.geomParseOpts)
+			if err != nil {
+				return
+			}
 		default:
 			err = errInvalidArgument("cannot clipby " + ltok)
 			return
@@ -406,7 +419,7 @@ func (server *Server) cmdNearby(msg *Message, ts *txn.Status) (res resp.Value, e
 	}
 	sc, err := server.newScanner(
 		newScanCollector(msg, wr, &respOut), s.key, s.output, s.precision, s.glob, false,
-		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
+		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.clipby, s.nofields)
 	if err != nil {
 		return NOMessage, err
 	}
@@ -481,7 +494,7 @@ func (server *Server) cmdWithinOrIntersects(cmd string, msg *Message, ts *txn.St
 	}
 	sc, err := server.newScanner(
 		newScanCollector(msg, wr, &respOut), s.key, s.output, s.precision, s.glob, false,
-		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
+		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.clipby, s.nofields)
 	if err != nil {
 		return NOMessage, err
 	}
@@ -572,7 +585,7 @@ func (server *Server) cmdSearch(msg *Message, ts *txn.Status) (res resp.Value, e
 	}
 	sc, err := server.newScanner(
 		newScanCollector(msg, wr, &respOut), s.key, s.output, s.precision, s.glob, true,
-		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
+		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.clipby, s.nofields)
 	if err != nil {
 		return NOMessage, err
 	}
