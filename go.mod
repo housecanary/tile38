@@ -29,7 +29,7 @@ require (
 	github.com/yuin/gopher-lua v0.0.0-20170915035107-eb1c7299435c
 	golang.org/x/crypto v0.53.0
 	golang.org/x/net v0.56.0
-	google.golang.org/grpc v1.79.3
+	google.golang.org/grpc v1.82.1
 	layeh.com/gopher-json v0.0.0-20161224164157-c128cc74278b
 )
 
@@ -65,7 +65,7 @@ require (
 	golang.org/x/term v0.44.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/tidwall/geoindex => github.com/housecanary/geoindex v1.4.0-snapshot
