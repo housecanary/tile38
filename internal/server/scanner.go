@@ -53,6 +53,7 @@ type scanner struct {
 	globSingle     bool
 	fullFields     bool
 	matchValues    bool
+	clipby         geojson.Object
 	collector      scanCollector
 }
 
@@ -69,7 +70,7 @@ type ScanObjectParams struct {
 func (s *Server) newScanner(
 	collector scanCollector, key string, output outputT,
 	precision uint64, globPattern string, matchValues bool,
-	cursor uint64, limit limitT, wheres []whereT, whereins []whereinT, whereevals []whereevalT, nofields bool,
+	cursor uint64, limit limitT, wheres []whereT, whereins []whereinT, whereevals []whereevalT, clipby geojson.Object, nofields bool,
 ) (
 	*scanner, error,
 ) {
@@ -104,6 +105,7 @@ func (s *Server) newScanner(
 		precision:   precision,
 		globPattern: globPattern,
 		matchValues: matchValues,
+		clipby:      clipby,
 		collector:   collector,
 	}
 	if globPattern == "*" || globPattern == "" {
@@ -274,6 +276,18 @@ func (sc *scanner) globMatch(id string, o geojson.Object) (ok, keepGoing bool) {
 	return true, true
 }
 
+func (sc *scanner) clipMatch(o geojson.Object) (ok bool) {
+	if sc.clipby == nil || sc.clipby.Empty() {
+		return true
+	}
+
+	if sc.clipby.Intersects(o) {
+		return true
+	}
+
+	return
+}
+
 // Increment cursor
 func (sc *scanner) Offset() uint64 {
 	return sc.cursor
@@ -291,11 +305,17 @@ func (sc *scanner) testObject(id string, o geojson.Object, fields []float64) (
 	if !match {
 		return false, kg, fieldVals
 	}
+
+	match = sc.clipMatch(o)
+	if !match {
+		return false, true, fieldVals
+	}
+
 	nf, ok := sc.fieldMatch(id, fields, o)
 	return ok, true, nf
 }
 
-//id string, o geojson.Object, fields []float64, noLock bool
+// id string, o geojson.Object, fields []float64, noLock bool
 func (sc *scanner) writeObject(opts ScanObjectParams) bool {
 	if !opts.noLock {
 		sc.mu.Lock()
