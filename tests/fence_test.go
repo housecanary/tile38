@@ -199,7 +199,7 @@ func fence_channel_message_order_test(mc *mockServer) error {
 					break loop
 				}
 			case error:
-				fmt.Printf(err.Error())
+				fmt.Print(err.Error())
 			}
 		}
 
