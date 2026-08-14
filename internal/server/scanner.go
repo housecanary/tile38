@@ -12,6 +12,8 @@ import (
 	"github.com/tidwall/resp"
 	"github.com/tidwall/tile38/internal/collection"
 	"github.com/tidwall/tile38/internal/glob"
+	"github.com/tidwall/tile38/internal/txn"
+	lua "github.com/yuin/gopher-lua"
 )
 
 const limitItems = 100
@@ -54,6 +56,7 @@ type scanner struct {
 	fullFields     bool
 	matchValues    bool
 	collector      scanCollector
+	ts             *txn.Status
 }
 
 // ScanObjectParams ...
@@ -69,7 +72,7 @@ type ScanObjectParams struct {
 func (s *Server) newScanner(
 	collector scanCollector, key string, output outputT,
 	precision uint64, globPattern string, matchValues bool,
-	cursor uint64, limit limitT, wheres []whereT, whereins []whereinT, whereevals []whereevalT, nofields bool,
+	cursor uint64, limit limitT, wheres []whereT, whereins []whereinT, whereevals []whereevalT, nofields bool, ts *txn.Status,
 ) (
 	*scanner, error,
 ) {
@@ -105,6 +108,7 @@ func (s *Server) newScanner(
 		globPattern: globPattern,
 		matchValues: matchValues,
 		collector:   collector,
+		ts:          ts,
 	}
 	if globPattern == "*" || globPattern == "" {
 		sc.globEverything = true
@@ -203,6 +207,14 @@ func (sc *scanner) fieldMatch(id string, fields []float64, o geojson.Object) (fv
 			}
 		}
 		for _, whereval := range sc.whereevals {
+			tsUserData := whereval.luaState.NewUserData()
+			tsUserData.Value = sc.ts
+
+			luaSetRawGlobals(
+				whereval.luaState, map[string]lua.LValue{
+					"TXN_STATUS": tsUserData,
+				})
+
 			if !whereval.match(sc.col, id, fields, o) {
 				return
 			}
@@ -295,7 +307,7 @@ func (sc *scanner) testObject(id string, o geojson.Object, fields []float64) (
 	return ok, true, nf
 }
 
-//id string, o geojson.Object, fields []float64, noLock bool
+// id string, o geojson.Object, fields []float64, noLock bool
 func (sc *scanner) writeObject(opts ScanObjectParams) bool {
 	if !opts.noLock {
 		sc.mu.Lock()

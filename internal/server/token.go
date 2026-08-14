@@ -196,6 +196,7 @@ func (whereeval whereevalT) Close() {
 func (whereeval whereevalT) match(col *collection.Collection, id string, fields []float64, o geojson.Object) bool {
 	*(whereeval.ud.Value.(*luaCollectionItem)) = luaCollectionItem{id, o, fields, col}
 	whereeval.luaState.Push(whereeval.fn)
+
 	if err := whereeval.luaState.PCall(0, 1, nil); err != nil {
 		panic(err.Error())
 	}

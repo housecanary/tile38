@@ -406,7 +406,7 @@ func (server *Server) cmdNearby(msg *Message, ts *txn.Status) (res resp.Value, e
 	}
 	sc, err := server.newScanner(
 		newScanCollector(msg, wr, &respOut), s.key, s.output, s.precision, s.glob, false,
-		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields)
+		s.cursor, s.limit, s.wheres, s.whereins, s.whereevals, s.nofields, ts)
 	if err != nil {
 		return NOMessage, err
 	}
