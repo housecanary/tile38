@@ -1,6 +1,6 @@
 module github.com/tidwall/tile38
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/Shopify/sarama v1.13.0
@@ -27,8 +27,8 @@ require (
 	github.com/tidwall/sjson v1.1.1
 	github.com/tidwall/tinybtree v0.0.0-20181217131827-de5932d649b5
 	github.com/yuin/gopher-lua v0.0.0-20170915035107-eb1c7299435c
-	golang.org/x/crypto v0.55.0
-	golang.org/x/net v0.58.0
+	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.61.0
 	google.golang.org/grpc v1.83.2
 	layeh.com/gopher-json v0.0.0-20161224164157-c128cc74278b
 )
@@ -60,10 +60,10 @@ require (
 	github.com/tidwall/rbang v1.2.2 // indirect
 	github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e // indirect
 	github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
